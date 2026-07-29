@@ -3,7 +3,6 @@ import type { DocumentRecord, NotificationType, Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import {
   canAccessDocumentCentre,
-  DOCUMENT_CENTRE_USERNAMES,
   type DocFilter,
   type DocSort,
 } from '@/lib/document-centre-shared';
@@ -14,11 +13,12 @@ import {
  * `canAccessDocumentCentre` in document-centre-shared.ts; everything here is
  * db-backed and must never be imported into a client component.
  *
- * Access model: the executive allowlist (Super Admin + the three OSD desks)
- * all see EVERY record — the Document Centre is a shared confidential
- * workspace, not a division-scoped module. It is therefore deliberately
- * outside buildVisibilityClausesFrom; HMYAS division-isolation does not apply
- * here (it only constrains the division-scoped modules).
+ * Access model: the executive audience (Super Admins + any user granted the
+ * can_access_document_centre flag) all see EVERY record — the Document Centre
+ * is a shared confidential workspace, not a division-scoped module. It is
+ * therefore deliberately outside buildVisibilityClausesFrom; HMYAS
+ * division-isolation does not apply here (it only constrains the
+ * division-scoped modules).
  */
 
 // A Prisma client or an interactive-transaction client — so the notify/audit
@@ -29,14 +29,17 @@ type Db = Pick<typeof prisma, 'notification' | 'auditLog' | 'user'>;
 // Access
 // ------------------------------------------------------------
 
-/** DB-backed gate — loads the caller and applies the username allowlist. */
+/** DB-backed gate — loads the caller and applies the access rule. */
 export async function canAccessDocumentCentreById(userId: string): Promise<boolean> {
   const me = await prisma.user.findUnique({
     where: { id: userId },
-    select: { isSuperAdmin: true, username: true, isActive: true },
+    select: { isSuperAdmin: true, canAccessDocumentCentre: true, isActive: true },
   });
   if (!me || !me.isActive) return false;
-  return canAccessDocumentCentre({ isSuperAdmin: me.isSuperAdmin, username: me.username });
+  return canAccessDocumentCentre({
+    isSuperAdmin: me.isSuperAdmin,
+    canAccessDocumentCentre: me.canAccessDocumentCentre,
+  });
 }
 
 /**
@@ -48,10 +51,7 @@ export async function getDocumentAudienceUserIds(excludeId?: string): Promise<st
   const rows = await prisma.user.findMany({
     where: {
       isActive: true,
-      OR: [
-        { isSuperAdmin: true },
-        { username: { in: [...DOCUMENT_CENTRE_USERNAMES] } },
-      ],
+      OR: [{ isSuperAdmin: true }, { canAccessDocumentCentre: true }],
     },
     select: { id: true },
   });
@@ -62,7 +62,7 @@ export async function getDocumentAudienceUserIds(excludeId?: string): Promise<st
 export function documentMentionWhere(): Prisma.UserWhereInput {
   return {
     isActive: true,
-    OR: [{ isSuperAdmin: true }, { username: { in: [...DOCUMENT_CENTRE_USERNAMES] } }],
+    OR: [{ isSuperAdmin: true }, { canAccessDocumentCentre: true }],
   };
 }
 

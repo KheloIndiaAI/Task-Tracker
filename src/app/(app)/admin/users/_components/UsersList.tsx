@@ -36,6 +36,7 @@ export type UserRow = {
   supervisorId: string | null;
   isActive: boolean;
   isSuperAdmin: boolean;
+  canAccessDocumentCentre: boolean;
   lastLogin: Date | null;
 };
 
@@ -268,6 +269,7 @@ function rowToDefaults(u: UserRow): UserFormDefaults {
     extraDivisionIds: u.extraDivisionIds,
     supervisorId: u.supervisorId,
     isSuperAdmin: u.isSuperAdmin,
+    canAccessDocumentCentre: u.canAccessDocumentCentre,
   };
 }
 

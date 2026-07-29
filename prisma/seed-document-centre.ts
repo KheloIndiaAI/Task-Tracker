@@ -87,9 +87,9 @@ async function main() {
     if (existing) {
       await prisma.user.update({
         where: { username: acct.username },
-        data: { divisionId: hmyas.id, isActive: true },
+        data: { divisionId: hmyas.id, isActive: true, canAccessDocumentCentre: true },
       });
-      console.log(`Ensured ${acct.username} is an active HMYAS member.`);
+      console.log(`Ensured ${acct.username} is an active HMYAS member with Document Centre access.`);
       createdUserIds.push(existing.id);
     } else {
       const user = await prisma.user.create({
@@ -102,6 +102,7 @@ async function main() {
           divisionId: hmyas.id,
           isActive: true,
           isSuperAdmin: false,
+          canAccessDocumentCentre: true,
           forcePasswordChange: true,
         },
       });
