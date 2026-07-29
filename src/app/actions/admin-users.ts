@@ -226,6 +226,10 @@ const createUserSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'on'),
+  canAccessDocumentCentre: z
+    .string()
+    .optional()
+    .transform((v) => v === 'on'),
   // phone + work activities are self-service on /profile — the admin form
   // never collects them, so they are intentionally absent here.
 });
@@ -256,6 +260,7 @@ export async function createUserAction(
     extraDivisionIds: formData.getAll('extraDivisionIds'),
     supervisorId: formData.get('supervisorId'),
     isSuperAdmin: formData.get('isSuperAdmin'),
+    canAccessDocumentCentre: formData.get('canAccessDocumentCentre'),
   });
   if (!parsed.success) {
     const fieldErrors: Record<string, string> = {};
@@ -313,6 +318,7 @@ export async function createUserAction(
           supervisorId: parsed.data.supervisorId ?? null,
           isActive: true,
           isSuperAdmin: parsed.data.isSuperAdmin ?? false,
+          canAccessDocumentCentre: parsed.data.canAccessDocumentCentre ?? false,
           forcePasswordChange: parsed.data.forcePasswordChange ?? true,
           createdById: guard.userId,
         },
@@ -336,6 +342,7 @@ export async function createUserAction(
       divisionId: created.divisionId,
       extraDivisionIds: extra.ids,
       isSuperAdmin: created.isSuperAdmin,
+      canAccessDocumentCentre: created.canAccessDocumentCentre,
     });
 
     revalidateAll();
@@ -369,6 +376,10 @@ const updateUserSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'on'),
+  canAccessDocumentCentre: z
+    .string()
+    .optional()
+    .transform((v) => v === 'on'),
   // phone + work activities are self-service on /profile — the admin form
   // never collects them, so they are intentionally absent here (and must
   // never be written from this action, which would wipe self-set values).
@@ -395,6 +406,7 @@ export async function updateUserAction(
     extraDivisionIds: formData.getAll('extraDivisionIds'),
     supervisorId: formData.get('supervisorId'),
     isSuperAdmin: formData.get('isSuperAdmin'),
+    canAccessDocumentCentre: formData.get('canAccessDocumentCentre'),
   });
   if (!parsed.success) {
     const fieldErrors: Record<string, string> = {};
@@ -418,6 +430,7 @@ export async function updateUserAction(
       isPmu: true,
       supervisorId: true,
       isSuperAdmin: true,
+      canAccessDocumentCentre: true,
     },
   });
   if (!before) return fail('User not found.', epoch);
@@ -495,6 +508,7 @@ export async function updateUserAction(
           ...(removingPmu ? { pmuRole: null } : {}),
           supervisorId: parsed.data.supervisorId,
           isSuperAdmin: parsed.data.isSuperAdmin,
+          canAccessDocumentCentre: parsed.data.canAccessDocumentCentre,
         },
       });
       if (extraToRemove.length > 0) {
@@ -527,6 +541,7 @@ export async function updateUserAction(
       extraDivisionIds: extra.ids,
       supervisorId: updated.supervisorId,
       isSuperAdmin: updated.isSuperAdmin,
+      canAccessDocumentCentre: updated.canAccessDocumentCentre,
     });
 
     // Granting or revoking Super Admin is security-sensitive — leave a
@@ -538,6 +553,18 @@ export async function updateUserAction(
         updated.id,
         { isSuperAdmin: before.isSuperAdmin },
         { isSuperAdmin: updated.isSuperAdmin },
+      );
+    }
+
+    // Granting or revoking Document Centre access is an access change — leave a
+    // distinct role_change entry too, mirroring the Super Admin one.
+    if (before.canAccessDocumentCentre !== updated.canAccessDocumentCentre) {
+      await audit(
+        guard.userId,
+        'role_change',
+        updated.id,
+        { canAccessDocumentCentre: before.canAccessDocumentCentre },
+        { canAccessDocumentCentre: updated.canAccessDocumentCentre },
       );
     }
 

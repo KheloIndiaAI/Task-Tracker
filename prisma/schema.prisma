@@ -211,6 +211,9 @@ model User {
 
   isActive            Boolean   @default(true) @map("is_active")
   isSuperAdmin        Boolean   @default(false) @map("is_super_admin")
+  // Super-Admin-managed grant of access to the executive Document Centre.
+  // Access = is_super_admin OR this flag (see canAccessDocumentCentre).
+  canAccessDocumentCentre Boolean @default(false) @map("can_access_document_centre")
   forcePasswordChange Boolean   @default(false) @map("force_password_change")
   passwordChangedAt   DateTime? @map("password_changed_at") @db.Timestamptz(6)
   lastLogin           DateTime? @map("last_login") @db.Timestamptz(6)

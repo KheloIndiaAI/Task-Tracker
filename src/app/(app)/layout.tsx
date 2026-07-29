@@ -193,11 +193,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Tour report (external platform) — Super Admins plus the osd.myas
   // account specifically, which is narrower than the OSD-slot gate.
   const showTourReport = me.isSuperAdmin || me.username === 'osd.myas';
-  // Document Centre — Super Admins plus the three OSD desk accounts. An
-  // explicit username allowlist (see src/lib/document-centre-shared.ts).
+  // Document Centre — Super Admins plus any user granted the
+  // can_access_document_centre flag (see src/lib/document-centre-shared.ts).
   const canAccessDocumentCentre = canAccessDocumentCentreShared({
     isSuperAdmin: me.isSuperAdmin,
-    username: me.username,
+    canAccessDocumentCentre: me.canAccessDocumentCentre,
   });
   // Timeline Files are hidden from barred slots (PMU Consultant) — drop the nav
   // link so it does not lead to an empty list. Enforcement is server-side in

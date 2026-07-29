@@ -9,23 +9,27 @@ import type { PillPriorityTone, PillStatusTone } from '@/components/ui/Pill';
  */
 
 /**
- * The Document Centre is executive-only: Super Admins plus the three OSD desk
- * accounts. This is an explicit username allowlist — deliberately NOT tied to
- * the division-scoped visibility engine — so the shared workspace is visible
- * to all four regardless of their home division. Mirrors the `showTourReport`
- * username gate in the app layout.
+ * The Document Centre is executive-only. Access is granted per user by a Super
+ * Admin (the `can_access_document_centre` toggle on Users > Create / Edit) —
+ * deliberately NOT tied to the division-scoped visibility engine, so a granted
+ * user sees the shared workspace regardless of their home division. Super Admins
+ * always have access. Every granted user gets the full Document Centre rights
+ * (view, discuss, workflow, mentions, notifications).
  */
-export const DOCUMENT_CENTRE_USERNAMES = ['osd.myas', 'osd.ss', 'osd.dgsai'] as const;
-
 export function canAccessDocumentCentre(user: {
   isSuperAdmin: boolean;
-  username: string;
+  canAccessDocumentCentre: boolean;
 }): boolean {
-  return (
-    user.isSuperAdmin ||
-    (DOCUMENT_CENTRE_USERNAMES as readonly string[]).includes(user.username)
-  );
+  return user.isSuperAdmin || user.canAccessDocumentCentre;
 }
+
+/**
+ * The default desk accounts provisioned by `db:seed:document-centre` and
+ * back-filled with the access flag by the add_document_centre_access migration.
+ * Retained only as the seed's provisioning list — it is no longer the access
+ * gate (that is now the per-user `can_access_document_centre` flag above).
+ */
+export const DOCUMENT_CENTRE_USERNAMES = ['osd.myas', 'osd.ss', 'osd.dgsai'] as const;
 
 // ------------------------------------------------------------
 // Urgency — replaces task priority. Reuses the existing priority Pill tones

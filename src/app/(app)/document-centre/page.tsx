@@ -2,8 +2,11 @@ import { redirect } from 'next/navigation';
 
 import { DocumentCardInteractive } from '@/components/ui/DocumentCardInteractive';
 import { auth } from '@/lib/auth';
-import { canAccessDocumentCentre } from '@/lib/document-centre-shared';
-import { fetchDocumentCounts, fetchVisibleDocuments } from '@/lib/document-centre';
+import {
+  canAccessDocumentCentreById,
+  fetchDocumentCounts,
+  fetchVisibleDocuments,
+} from '@/lib/document-centre';
 import {
   DOC_FILTERS,
   DOC_SORTS,
@@ -26,8 +29,9 @@ export default async function DocumentCentrePage({ searchParams }: PageProps) {
   const session = await auth();
   if (!session?.user) redirect('/login');
   // Executive-only. Unauthorized users never reach the module UI (the nav item
-  // is also hidden); the APIs + server actions return a real 403.
-  if (!canAccessDocumentCentre(session.user)) redirect('/tasks');
+  // is also hidden); the APIs + server actions return a real 403. DB-backed so a
+  // just-granted user gets in immediately, without waiting for a token refresh.
+  if (!(await canAccessDocumentCentreById(session.user.id))) redirect('/tasks');
 
   const filter: DocFilter = DOC_FILTERS.includes((searchParams?.filter as DocFilter) ?? 'all')
     ? ((searchParams?.filter as DocFilter) ?? 'all')
