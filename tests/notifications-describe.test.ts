@@ -47,3 +47,41 @@ describe('describeNotification — comment on my task', () => {
     expect(d.text).toBe('New comment on "Cabinet note"');
   });
 });
+
+describe('describeNotification — task_assigned reasons', () => {
+  const base = { taskId: 't1', taskName: 'Cabinet note', assignedByName: 'Ravi K.' };
+
+  it('renders each reason distinctly', () => {
+    expect(describeNotification('task_assigned', { ...base, reason: 'assigned' }).text).toBe(
+      'Ravi K. assigned "Cabinet note" to you',
+    );
+    expect(describeNotification('task_assigned', { ...base, reason: 'reassigned' }).text).toBe(
+      'Ravi K. reassigned "Cabinet note" to you',
+    );
+    expect(describeNotification('task_assigned', { ...base, reason: 'transferred' }).text).toBe(
+      'Ravi K. transferred "Cabinet note" to you',
+    );
+    expect(describeNotification('task_assigned', { ...base, reason: 'subtask' }).text).toBe(
+      'Ravi K. assigned you the subtask "Cabinet note"',
+    );
+    expect(describeNotification('task_assigned', { ...base, reason: 'collaborator' }).text).toBe(
+      'Ravi K. added you as a collaborator on "Cabinet note"',
+    );
+    expect(describeNotification('task_assigned', { ...base, reason: 'pmu_team_share' }).text).toBe(
+      'Ravi K. shared "Cabinet note" with your PMU team',
+    );
+  });
+
+  it('falls back to the assigned wording when reason is absent (legacy) or unknown', () => {
+    expect(describeNotification('task_assigned', base).text).toBe('Ravi K. assigned "Cabinet note" to you');
+    expect(describeNotification('task_assigned', { ...base, reason: 'wat' }).text).toBe(
+      'Ravi K. assigned "Cabinet note" to you',
+    );
+  });
+
+  it('uses the no-actor wording when no name is present', () => {
+    expect(
+      describeNotification('task_assigned', { taskId: 't1', taskName: 'Cabinet note', reason: 'collaborator' }).text,
+    ).toBe('You were added as a collaborator on "Cabinet note"');
+  });
+});

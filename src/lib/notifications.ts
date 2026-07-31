@@ -65,10 +65,48 @@ export function describeNotification(
     case 'task_assigned': {
       const by = typeof p.assignedByName === 'string' ? p.assignedByName.trim() : '';
       const what = title ? `"${title}"` : 'a task';
+      // `reason` distinguishes the several situations that all emit a
+      // `task_assigned` notification, so the bell (and the WhatsApp dispatcher,
+      // which mirrors this map) can word each one distinctly. Older
+      // notifications carry no reason and fall back to the plain "assigned" copy.
+      const reason = typeof p.reason === 'string' ? p.reason : 'assigned';
+      const WORDING: Record<string, { icon: string; withBy: string; noBy: string }> = {
+        assigned: {
+          icon: 'ti-user-plus',
+          withBy: `${by} assigned ${what} to you`,
+          noBy: `Assigned ${what} to you`,
+        },
+        reassigned: {
+          icon: 'ti-user-plus',
+          withBy: `${by} reassigned ${what} to you`,
+          noBy: `${what} was reassigned to you`,
+        },
+        transferred: {
+          icon: 'ti-transfer',
+          withBy: `${by} transferred ${what} to you`,
+          noBy: `${what} was transferred to you`,
+        },
+        subtask: {
+          icon: 'ti-subtask',
+          withBy: `${by} assigned you the subtask ${what}`,
+          noBy: `You were assigned the subtask ${what}`,
+        },
+        collaborator: {
+          icon: 'ti-users',
+          withBy: `${by} added you as a collaborator on ${what}`,
+          noBy: `You were added as a collaborator on ${what}`,
+        },
+        pmu_team_share: {
+          icon: 'ti-users-group',
+          withBy: `${by} shared ${what} with your PMU team`,
+          noBy: `${what} was shared with your PMU team`,
+        },
+      };
+      const w = WORDING[reason] ?? WORDING.assigned;
       return {
-        icon: 'ti-user-plus',
+        icon: w.icon,
         iconClass: 'text-primary',
-        text: by ? `${by} assigned ${what} to you` : `Assigned ${what} to you`,
+        text: by ? w.withBy : w.noBy,
         href: taskHref,
       };
     }

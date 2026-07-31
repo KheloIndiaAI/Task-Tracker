@@ -580,6 +580,7 @@ async function createTaskInner(
           userId: ownerId,
           type: 'task_assigned',
           payload: {
+            reason: 'assigned',
             taskId: task.id,
             taskName: task.name,
             assignedById: meRow.id,
@@ -1078,6 +1079,7 @@ export async function updateTaskFieldsAction(
         userId: reassignedOwnerId,
         type: 'task_assigned',
         payload: {
+          reason: 'reassigned',
           taskId: task.id,
           taskName: task.name,
           assignedById: me.id,
@@ -1227,6 +1229,7 @@ export async function addSubtaskAction(
           userId: assigneeId,
           type: 'task_assigned',
           payload: {
+            reason: 'subtask',
             taskId: subtask.id,
             taskName: subtask.name,
             parentTaskId: parent.id,
@@ -1442,6 +1445,7 @@ export async function updateSubtaskAction(
           userId: parsed.data.assigneeId,
           type: 'task_assigned',
           payload: {
+            reason: 'subtask',
             taskId: subtask.id,
             taskName: subtask.name,
             parentTaskId: parent.id,
@@ -2130,6 +2134,7 @@ export async function addCollaboratorAction(
           userId: parsed.data.userId,
           type: 'task_assigned',
           payload: {
+            reason: 'collaborator',
             taskId: task.id,
             taskName: task.name,
             role: parsed.data.role,
@@ -2322,6 +2327,7 @@ export async function setPmuTeamShareAction(
           userId: u.id,
           type: 'task_assigned',
           payload: {
+            reason: 'pmu_team_share',
             taskId: task.id,
             taskName: task.name,
             assignedById: me.id,
@@ -2468,6 +2474,7 @@ export async function reassignTaskAction(
             userId: parsed.data.newOwnerId,
             type: 'task_assigned',
             payload: {
+              reason: 'reassigned',
               taskId: task.id,
               taskName: task.name,
               actorId: me.id,
@@ -2602,6 +2609,7 @@ export async function resolveReassignmentAction(
               userId: request.proposedOwnerId,
               type: 'task_assigned' as const,
               payload: {
+                reason: 'reassigned',
                 taskId: request.taskId,
                 taskName: request.task.name,
                 actorId: me.id,
@@ -2781,6 +2789,7 @@ export async function transferTaskAction(
         userId: target.id,
         type: 'task_assigned',
         payload: {
+          reason: 'transferred',
           taskId: task.id,
           taskName: task.name,
           assignedById: me.id,
