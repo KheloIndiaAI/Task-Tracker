@@ -146,14 +146,21 @@ export function describeNotification(
         accent: 'info',
       };
     }
-    case 'task_due_soon':
+    case 'task_due_soon': {
+      const when =
+        p.bucket === 'today'
+          ? 'is due today'
+          : p.bucket === 'tomorrow'
+            ? 'is due tomorrow'
+            : 'is due within 24 hours';
       return {
         icon: 'ti-clock',
         iconClass: 'text-accent',
-        text: title ? `"${title}" is due within 24 hours` : 'Task due within 24 hours',
+        text: title ? `"${title}" ${when}` : `Task ${when}`,
         href: taskHref,
         accent: 'js',
       };
+    }
     case 'task_overdue':
       return {
         icon: 'ti-alert-triangle',
@@ -271,6 +278,33 @@ export function describeNotification(
           ? `${by} revoked your ${division} access`
           : `${by} revoked ${to}'s ${division} access`,
         href: isDelegate ? '/tasks' : '/admin/structure',
+      };
+    }
+    case 'comment_on_my_task': {
+      const by = typeof p.actorName === 'string' ? p.actorName.trim() : '';
+      return {
+        icon: 'ti-message-circle',
+        iconClass: 'text-primary',
+        text: title
+          ? `${by ? `${by} commented` : 'New comment'} on "${title}"`
+          : by
+            ? `${by} commented on your task`
+            : 'New comment on your task',
+        href: taskHref,
+        accent: 'primary',
+      };
+    }
+    case 'timeline_file_due_soon': {
+      const ref = typeof p.refNo === 'string' ? p.refNo.trim() : '';
+      const subject = typeof p.subject === 'string' ? p.subject.trim() : '';
+      const label = ref && subject ? `${ref} — ${subject}` : ref || subject;
+      return {
+        icon: 'ti-clock',
+        iconClass: 'text-accent',
+        // A Timeline File deadline is an amber signal, like its countdown pill.
+        text: label ? `Timeline file ${label} is due soon` : 'A timeline file is due soon',
+        href: p.timelineFileId ? `/timeline-files/${String(p.timelineFileId)}` : '/timeline-files',
+        accent: 'js',
       };
     }
     default:

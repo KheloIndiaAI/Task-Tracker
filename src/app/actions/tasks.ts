@@ -1527,7 +1527,12 @@ export async function postCommentAction(
 
   const task = await prisma.task.findUnique({
     where: { id: parsed.data.taskId },
-    select: { id: true, name: true },
+    select: {
+      id: true,
+      name: true,
+      ownerId: true,
+      collaborators: { select: { userId: true } },
+    },
   });
   if (!task) return fail('Task not found.', epoch);
 
@@ -1565,6 +1570,32 @@ export async function postCommentAction(
       }));
     if (mentionNotifs.length > 0) {
       await prisma.notification.createMany({ data: mentionNotifs });
+    }
+
+    // A plain comment (no @mention) still notifies whoever owns or collaborates
+    // on the task — minus the author and anyone already pinged via a mention
+    // above, so no one receives a duplicate for the same comment.
+    const mentioned = new Set(mentions);
+    const commentRecipients = new Set<string>([
+      task.ownerId,
+      ...task.collaborators.map((c) => c.userId),
+    ]);
+    commentRecipients.delete(me.id);
+    for (const uid of mentioned) commentRecipients.delete(uid);
+    if (commentRecipients.size > 0) {
+      await prisma.notification.createMany({
+        data: [...commentRecipients].map((uid) => ({
+          userId: uid,
+          type: 'comment_on_my_task' as const,
+          payload: {
+            taskId: task.id,
+            taskName: task.name,
+            commentId: comment.id,
+            actorId: me.id,
+            actorName: me.name ?? null,
+          },
+        })),
+      });
     }
   } catch (err) {
     logError('postCommentAction failed', err);

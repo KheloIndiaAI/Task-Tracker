@@ -161,6 +161,8 @@ enum NotificationType {
   document_awaiting_input
   document_attachment_added
   document_drive_link_added
+  comment_on_my_task
+  timeline_file_due_soon
 }
 
 enum AuditAction {
