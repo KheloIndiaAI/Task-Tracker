@@ -7,6 +7,7 @@ import {
   canEditTfAttachments,
 } from '@/app/actions/attachments';
 import { auth } from '@/lib/auth';
+import { canAccessBusinessCardsById } from '@/lib/business-cards';
 import { canAccessDocumentCentreById } from '@/lib/document-centre';
 import { rateLimit } from '@/lib/rate-limit';
 import {
@@ -32,7 +33,7 @@ import {
  */
 
 const bodySchema = z.object({
-  scope: z.enum(['task', 'tf_source', 'tf_action', 'document']),
+  scope: z.enum(['task', 'tf_source', 'tf_action', 'document', 'business_card']),
   parentId: z.string().uuid(),
   filename: z.string().trim().min(1).max(200),
   contentType: z.string().trim().min(1).max(200),
@@ -85,7 +86,9 @@ export async function POST(request: Request) {
       ? await canAddTaskAttachments(session.user.id, parsed.data.parentId)
       : parsed.data.scope === 'document'
         ? await canAccessDocumentCentreById(session.user.id)
-        : await canEditTfAttachments(session.user.id, parsed.data.parentId);
+        : parsed.data.scope === 'business_card'
+          ? await canAccessBusinessCardsById(session.user.id)
+          : await canEditTfAttachments(session.user.id, parsed.data.parentId);
   if (!allowed) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
@@ -97,7 +100,9 @@ export async function POST(request: Request) {
         ? { kind: 'tf_source', tfId: parsed.data.parentId }
         : parsed.data.scope === 'tf_action'
           ? { kind: 'tf_action', tfId: parsed.data.parentId }
-          : { kind: 'document', documentId: parsed.data.parentId };
+          : parsed.data.scope === 'document'
+            ? { kind: 'document', documentId: parsed.data.parentId }
+            : { kind: 'business_card', businessCardId: parsed.data.parentId };
   const key = generateObjectKey(scope, parsed.data.filename);
 
   try {

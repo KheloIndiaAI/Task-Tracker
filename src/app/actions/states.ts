@@ -110,6 +110,13 @@ export const INITIAL_TF_STATE: TimelineFileState = { ...ZERO };
 export type CreateDocumentState = Base & { documentId?: string };
 export const INITIAL_CREATE_DOCUMENT_STATE: CreateDocumentState = { ...ZERO };
 
+// -----------------------------------------------------------------------------
+// Business Cards (src/app/actions/business-cards.ts)
+// -----------------------------------------------------------------------------
+
+export type BusinessCardState = Base & { businessCardId?: string };
+export const INITIAL_BUSINESS_CARD_STATE: BusinessCardState = { ...ZERO };
+
 // ------------------------------------------------------------
 // Division access delegations (src/app/actions/delegations.ts)
 // ------------------------------------------------------------

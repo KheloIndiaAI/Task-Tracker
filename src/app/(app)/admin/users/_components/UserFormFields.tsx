@@ -46,6 +46,7 @@ export type UserFormDefaults = {
   supervisorId?: string | null;
   isSuperAdmin?: boolean;
   canAccessDocumentCentre?: boolean;
+  canAccessBusinessCards?: boolean;
 };
 
 type UserFormFieldsProps = {
@@ -245,6 +246,17 @@ export function UserFormFields({
             name="canAccessDocumentCentre"
             defaultChecked={defaults?.canAccessDocumentCentre}
             ariaLabel="Grant Document Centre access"
+          />
+        </label>
+        <label className="mt-2 flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border border-line">
+          <span className="inline-flex items-center gap-2 text-[12px] text-ink">
+            <i className="ti ti-address-book text-[14px] text-primary" aria-hidden="true" />
+            Business Cards access
+          </span>
+          <Switch
+            name="canAccessBusinessCards"
+            defaultChecked={defaults?.canAccessBusinessCards}
+            ariaLabel="Grant Business Cards access"
           />
         </label>
       </Section>

@@ -72,7 +72,8 @@ export type AttachmentScope =
   | { kind: 'task'; taskId: string }
   | { kind: 'tf_source'; tfId: string }
   | { kind: 'tf_action'; tfId: string }
-  | { kind: 'document'; documentId: string };
+  | { kind: 'document'; documentId: string }
+  | { kind: 'business_card'; businessCardId: string };
 
 export function objectKeyPrefix(scope: AttachmentScope): string {
   switch (scope.kind) {
@@ -84,6 +85,8 @@ export function objectKeyPrefix(scope: AttachmentScope): string {
       return `timeline-files/${scope.tfId}/action`;
     case 'document':
       return `document-records/${scope.documentId}`;
+    case 'business_card':
+      return `business-cards/${scope.businessCardId}`;
   }
 }
 

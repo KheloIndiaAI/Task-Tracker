@@ -122,6 +122,7 @@ enum AttachmentOwnerType {
   timeline_file_action
   js_engagement
   document_record
+  business_card
 }
 
 enum AttachmentSource {
@@ -216,6 +217,9 @@ model User {
   // Super-Admin-managed grant of access to the executive Document Centre.
   // Access = is_super_admin OR this flag (see canAccessDocumentCentre).
   canAccessDocumentCentre Boolean @default(false) @map("can_access_document_centre")
+  // Super-Admin-managed grant of access to the Business Cards module.
+  // Access = is_super_admin OR this flag (see canAccessBusinessCards).
+  canAccessBusinessCards  Boolean @default(false) @map("can_access_business_cards")
   forcePasswordChange Boolean   @default(false) @map("force_password_change")
   passwordChangedAt   DateTime? @map("password_changed_at") @db.Timestamptz(6)
   lastLogin           DateTime? @map("last_login") @db.Timestamptz(6)
@@ -276,6 +280,9 @@ model User {
   createdDocumentRecords  DocumentRecord[]  @relation("DocumentRecordCreatedBy")
   archivedDocumentRecords DocumentRecord[]  @relation("DocumentRecordArchivedBy")
   documentComments        DocumentComment[]
+
+  createdBusinessCards      BusinessCard[]      @relation("BusinessCardCreatedBy")
+  createdBusinessCardEvents BusinessCardEvent[] @relation("BusinessCardEventCreatedBy")
 
   @@index([supervisorId])
   @@index([divisionId])
@@ -718,6 +725,52 @@ model DocumentRecord {
   @@index([lastActivityAt])
   @@index([createdAt(sort: Desc)])
   @@map("document_records")
+}
+
+// ============================================================
+// Business Cards — a toggle-gated shared workspace for contacts collected at
+// events. Access is the per-user can_access_business_cards flag (mirrors the
+// Document Centre): everyone with access sees every card. Not division-scoped.
+// ============================================================
+
+model BusinessCardEvent {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique
+  createdById String   @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  createdBy User           @relation("BusinessCardEventCreatedBy", fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  cards     BusinessCard[]
+
+  @@map("business_card_events")
+}
+
+model BusinessCard {
+  id       String  @id @default(uuid()) @db.Uuid
+  fullName String  @map("full_name")
+  jobTitle String? @map("job_title")
+  company  String
+  industry String?
+  email    String?
+  mobile   String?
+  remarks  String?
+  // Optional link to a saved event; SetNull so deleting an event never drops
+  // the contact. The event's name is the human label shown on the card.
+  eventId String? @map("event_id") @db.Uuid
+
+  createdById    String   @map("created_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  lastActivityAt DateTime @default(now()) @map("last_activity_at") @db.Timestamptz(6)
+
+  event     BusinessCardEvent? @relation(fields: [eventId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  createdBy User               @relation("BusinessCardCreatedBy", fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([createdById])
+  @@index([eventId])
+  @@index([lastActivityAt])
+  @@index([createdAt(sort: Desc)])
+  @@map("business_cards")
 }
 
 model DocumentComment {

@@ -11,6 +11,7 @@ type MobileBottomNavProps = {
   isOsd: boolean;
   isJs: boolean;
   canAccessDocumentCentre: boolean;
+  canAccessBusinessCards: boolean;
   canAccessTimelineFiles: boolean;
   unreadCount: number;
 };
@@ -40,6 +41,7 @@ export function MobileBottomNav({
   isOsd,
   isJs,
   canAccessDocumentCentre,
+  canAccessBusinessCards,
   canAccessTimelineFiles,
   unreadCount,
 }: MobileBottomNavProps) {
@@ -76,7 +78,8 @@ export function MobileBottomNav({
 
   const isMoreActive =
     [...MORE_ITEMS, ...ADMIN_MORE_ITEMS].some((item) => isActive(pathname, item.href)) ||
-    (canAccessDocumentCentre && isActive(pathname, '/document-centre'));
+    (canAccessDocumentCentre && isActive(pathname, '/document-centre')) ||
+    (canAccessBusinessCards && isActive(pathname, '/business-cards'));
 
   return (
     <nav
@@ -146,6 +149,14 @@ export function MobileBottomNav({
                   label="Document Centre"
                   icon="ti-files"
                   active={isActive(pathname, '/document-centre')}
+                />
+              ) : null}
+              {canAccessBusinessCards ? (
+                <MoreMenuItem
+                  href="/business-cards"
+                  label="Business Cards"
+                  icon="ti-address-book"
+                  active={isActive(pathname, '/business-cards')}
                 />
               ) : null}
               {(isSuperAdmin || isOsd || isJs) ? (
