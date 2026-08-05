@@ -50,9 +50,9 @@ export function BusinessCardImages({
               src={`/api/attachments/${img.id}/view`}
               alt={img.fileName}
               loading="lazy"
-              className="h-44 w-auto max-w-[300px] object-contain"
+              className="h-72 sm:h-96 lg:h-[460px] w-auto max-w-full object-contain"
             />
-            <span className="absolute top-1.5 right-1.5 w-6 h-6 grid place-items-center rounded-full bg-black/45 text-white opacity-0 group-hover:opacity-100 transition-opacity">
+            <span className="absolute top-2 right-2 w-8 h-8 grid place-items-center rounded-full bg-black/45 text-white opacity-0 group-hover:opacity-100 transition-opacity">
               <i className="ti ti-arrows-diagonal text-[13px]" aria-hidden="true" />
             </span>
           </a>
