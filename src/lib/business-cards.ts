@@ -58,7 +58,10 @@ type RawCard = {
   createdBy: { name: string };
 };
 
-function toDto(c: RawCard, hasAttachment: boolean): BusinessCardDto {
+/** Per-card attachment summary: whether any exist + the inline-viewable images. */
+type AttInfo = { hasAttachment: boolean; images: { id: string; fileName: string }[] };
+
+function toDto(c: RawCard, info: AttInfo | undefined): BusinessCardDto {
   return {
     id: c.id,
     fullName: c.fullName,
@@ -72,18 +75,33 @@ function toDto(c: RawCard, hasAttachment: boolean): BusinessCardDto {
     createdByName: c.createdBy.name,
     createdById: c.createdById,
     createdAt: c.createdAt.toISOString(),
-    hasAttachment,
+    hasAttachment: info?.hasAttachment ?? false,
+    imageAttachments: info?.images ?? [],
   };
 }
 
-/** Which of the given card ids have at least one attachment. */
-async function attachmentOwnerSet(ids: string[]): Promise<Set<string>> {
-  if (ids.length === 0) return new Set();
+/**
+ * Attachment summary per card id. An "image" is an UPLOADED attachment whose
+ * MIME type is image/* — Drive links are external URLs and cannot be shown
+ * inline, so they count towards hasAttachment but never as an inline image.
+ */
+async function attachmentsByOwner(ids: string[]): Promise<Map<string, AttInfo>> {
+  const map = new Map<string, AttInfo>();
+  if (ids.length === 0) return map;
   const rows = await prisma.attachment.findMany({
     where: { ownerType: 'business_card', ownerId: { in: ids } },
-    select: { ownerId: true },
+    select: { ownerId: true, id: true, fileName: true, mimeType: true, source: true },
+    orderBy: { uploadedAt: 'asc' },
   });
-  return new Set(rows.map((r) => r.ownerId));
+  for (const r of rows) {
+    const info = map.get(r.ownerId) ?? { hasAttachment: false, images: [] };
+    info.hasAttachment = true;
+    if (r.source === 'uploaded' && (r.mimeType?.startsWith('image/') ?? false)) {
+      info.images.push({ id: r.id, fileName: r.fileName });
+    }
+    map.set(r.ownerId, info);
+  }
+  return map;
 }
 
 /** All cards, newest-activity first — the full shared list (access-gated by the caller). */
@@ -92,8 +110,8 @@ export async function fetchBusinessCards(): Promise<BusinessCardDto[]> {
     orderBy: [{ lastActivityAt: 'desc' }, { createdAt: 'desc' }],
     select: CARD_SELECT,
   });
-  const withAttachment = await attachmentOwnerSet(cards.map((c) => c.id));
-  return cards.map((c) => toDto(c, withAttachment.has(c.id)));
+  const attachments = await attachmentsByOwner(cards.map((c) => c.id));
+  return cards.map((c) => toDto(c, attachments.get(c.id)));
 }
 
 /** Every saved event, alphabetical — powers the combobox and the event filter. */
@@ -108,6 +126,6 @@ export async function fetchBusinessCardEvents(): Promise<BusinessCardEventDto[]>
 export async function fetchBusinessCard(id: string): Promise<BusinessCardDto | null> {
   const card = await prisma.businessCard.findUnique({ where: { id }, select: CARD_SELECT });
   if (!card) return null;
-  const withAttachment = await attachmentOwnerSet([card.id]);
-  return toDto(card, withAttachment.has(card.id));
+  const attachments = await attachmentsByOwner([card.id]);
+  return toDto(card, attachments.get(card.id));
 }

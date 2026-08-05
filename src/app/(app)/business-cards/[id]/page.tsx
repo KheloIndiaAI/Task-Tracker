@@ -14,6 +14,7 @@ import { isS3Configured } from '@/lib/s3';
 
 import { BusinessCardDialog } from '../_components/BusinessCardDialog';
 import { DeleteBusinessCardButton } from '../_components/BusinessCardDetailActions';
+import { BusinessCardImages } from '../_components/BusinessCardImages';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -120,6 +121,14 @@ export default async function BusinessCardDetailPage({
               </span>
             ) : null}
           </h2>
+
+          {/* Inline preview of uploaded card images — scrollable strip. */}
+          {card.imageAttachments.length > 0 ? (
+            <div className="mb-4">
+              <BusinessCardImages images={card.imageAttachments} variant="strip" />
+            </div>
+          ) : null}
+
           <AttachmentList
             scope="business_card"
             parentId={card.id}

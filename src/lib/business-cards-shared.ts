@@ -34,6 +34,8 @@ export type BusinessCardDto = {
   createdById: string;
   createdAt: string;
   hasAttachment: boolean;
+  /** Uploaded image attachments (id + name), for inline preview and the swipe slide-over. */
+  imageAttachments: { id: string; fileName: string }[];
 };
 
 /** A saved event (unique name) for the combobox + the event filter. */
