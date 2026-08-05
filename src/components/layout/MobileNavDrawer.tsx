@@ -13,6 +13,7 @@ type MobileNavDrawerProps = {
   isJs: boolean;
   showTourReport: boolean;
   canAccessDocumentCentre: boolean;
+  canAccessBusinessCards: boolean;
   canAccessTimelineFiles: boolean;
 };
 
@@ -29,6 +30,7 @@ export function MobileNavDrawer({
   isJs,
   showTourReport,
   canAccessDocumentCentre,
+  canAccessBusinessCards,
   canAccessTimelineFiles,
 }: MobileNavDrawerProps) {
   useEffect(() => {
@@ -79,6 +81,7 @@ export function MobileNavDrawer({
           isJs={isJs}
           showTourReport={showTourReport}
           canAccessDocumentCentre={canAccessDocumentCentre}
+          canAccessBusinessCards={canAccessBusinessCards}
           canAccessTimelineFiles={canAccessTimelineFiles}
           drawerMode
           onNavigate={onClose}

@@ -230,6 +230,10 @@ const createUserSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'on'),
+  canAccessBusinessCards: z
+    .string()
+    .optional()
+    .transform((v) => v === 'on'),
   // phone + work activities are self-service on /profile — the admin form
   // never collects them, so they are intentionally absent here.
 });
@@ -261,6 +265,7 @@ export async function createUserAction(
     supervisorId: formData.get('supervisorId'),
     isSuperAdmin: formData.get('isSuperAdmin'),
     canAccessDocumentCentre: formData.get('canAccessDocumentCentre'),
+    canAccessBusinessCards: formData.get('canAccessBusinessCards'),
   });
   if (!parsed.success) {
     const fieldErrors: Record<string, string> = {};
@@ -319,6 +324,7 @@ export async function createUserAction(
           isActive: true,
           isSuperAdmin: parsed.data.isSuperAdmin ?? false,
           canAccessDocumentCentre: parsed.data.canAccessDocumentCentre ?? false,
+          canAccessBusinessCards: parsed.data.canAccessBusinessCards ?? false,
           forcePasswordChange: parsed.data.forcePasswordChange ?? true,
           createdById: guard.userId,
         },
@@ -343,6 +349,7 @@ export async function createUserAction(
       extraDivisionIds: extra.ids,
       isSuperAdmin: created.isSuperAdmin,
       canAccessDocumentCentre: created.canAccessDocumentCentre,
+      canAccessBusinessCards: created.canAccessBusinessCards,
     });
 
     revalidateAll();
@@ -380,6 +387,10 @@ const updateUserSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'on'),
+  canAccessBusinessCards: z
+    .string()
+    .optional()
+    .transform((v) => v === 'on'),
   // phone + work activities are self-service on /profile — the admin form
   // never collects them, so they are intentionally absent here (and must
   // never be written from this action, which would wipe self-set values).
@@ -407,6 +418,7 @@ export async function updateUserAction(
     supervisorId: formData.get('supervisorId'),
     isSuperAdmin: formData.get('isSuperAdmin'),
     canAccessDocumentCentre: formData.get('canAccessDocumentCentre'),
+    canAccessBusinessCards: formData.get('canAccessBusinessCards'),
   });
   if (!parsed.success) {
     const fieldErrors: Record<string, string> = {};
@@ -431,6 +443,7 @@ export async function updateUserAction(
       supervisorId: true,
       isSuperAdmin: true,
       canAccessDocumentCentre: true,
+      canAccessBusinessCards: true,
     },
   });
   if (!before) return fail('User not found.', epoch);
@@ -509,6 +522,7 @@ export async function updateUserAction(
           supervisorId: parsed.data.supervisorId,
           isSuperAdmin: parsed.data.isSuperAdmin,
           canAccessDocumentCentre: parsed.data.canAccessDocumentCentre,
+          canAccessBusinessCards: parsed.data.canAccessBusinessCards,
         },
       });
       if (extraToRemove.length > 0) {
@@ -542,6 +556,7 @@ export async function updateUserAction(
       supervisorId: updated.supervisorId,
       isSuperAdmin: updated.isSuperAdmin,
       canAccessDocumentCentre: updated.canAccessDocumentCentre,
+      canAccessBusinessCards: updated.canAccessBusinessCards,
     });
 
     // Granting or revoking Super Admin is security-sensitive — leave a
@@ -565,6 +580,17 @@ export async function updateUserAction(
         updated.id,
         { canAccessDocumentCentre: before.canAccessDocumentCentre },
         { canAccessDocumentCentre: updated.canAccessDocumentCentre },
+      );
+    }
+
+    // Granting or revoking Business Cards access is an access change too.
+    if (before.canAccessBusinessCards !== updated.canAccessBusinessCards) {
+      await audit(
+        guard.userId,
+        'role_change',
+        updated.id,
+        { canAccessBusinessCards: before.canAccessBusinessCards },
+        { canAccessBusinessCards: updated.canAccessBusinessCards },
       );
     }
 

@@ -52,6 +52,7 @@ type SidebarProps = {
   showTourReport?: boolean;
   /** Super Admins + the OSD desks — gates the Document Centre link */
   canAccessDocumentCentre?: boolean;
+  canAccessBusinessCards?: boolean;
   /** False for barred slots (PMU Consultant) — hides the Timeline files link */
   canAccessTimelineFiles?: boolean;
   /** mobile drawer mode renders labels regardless of breakpoint */
@@ -88,12 +89,20 @@ const DOCUMENT_CENTRE_ITEM: Item = {
   phase: 1,
 };
 
+const BUSINESS_CARDS_ITEM: Item = {
+  href: '/business-cards',
+  label: 'Business Cards',
+  icon: 'ti-address-book',
+  phase: 1,
+};
+
 export function Sidebar({
   isSuperAdmin,
   isOsd,
   isJs,
   showTourReport = false,
   canAccessDocumentCentre = false,
+  canAccessBusinessCards = false,
   canAccessTimelineFiles = true,
   drawerMode = false,
   onNavigate,
@@ -143,6 +152,14 @@ export function Sidebar({
         <NavItem
           item={DOCUMENT_CENTRE_ITEM}
           active={isActive(pathname, DOCUMENT_CENTRE_ITEM.href)}
+          drawerMode={drawerMode}
+          onClick={onNavigate}
+        />
+      ) : null}
+      {canAccessBusinessCards ? (
+        <NavItem
+          item={BUSINESS_CARDS_ITEM}
+          active={isActive(pathname, BUSINESS_CARDS_ITEM.href)}
           drawerMode={drawerMode}
           onClick={onNavigate}
         />

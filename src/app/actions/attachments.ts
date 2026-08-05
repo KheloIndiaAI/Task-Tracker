@@ -11,6 +11,7 @@ import {
   touchTaskActivity,
   touchTimelineFileActivity,
 } from '@/lib/activity';
+import { canAccessBusinessCardsById } from '@/lib/business-cards';
 import {
   canAccessDocumentCentreById,
   notifyDocumentAudience,
@@ -174,11 +175,12 @@ export async function canEditTfAttachments(
 /** Who may add a file / drive link, by scope. */
 async function canAddAttachmentForScope(
   callerId: string,
-  scope: 'task' | 'tf_source' | 'tf_action' | 'document',
+  scope: 'task' | 'tf_source' | 'tf_action' | 'document' | 'business_card',
   parentId: string,
 ): Promise<boolean> {
   if (scope === 'task') return canAddTaskAttachments(callerId, parentId);
   if (scope === 'document') return canAccessDocumentCentreById(callerId);
+  if (scope === 'business_card') return canAccessBusinessCardsById(callerId);
   return canEditTfAttachments(callerId, parentId);
 }
 
@@ -190,6 +192,7 @@ async function canManageAttachmentRow(
 ): Promise<boolean> {
   if (ownerType === 'task') return canEditTaskAttachments(callerId, ownerId);
   if (ownerType === 'document_record') return canAccessDocumentCentreById(callerId);
+  if (ownerType === 'business_card') return canAccessBusinessCardsById(callerId);
   return canEditTfAttachments(callerId, ownerId);
 }
 
@@ -200,7 +203,7 @@ async function canManageAttachmentRow(
 // ============================================================
 
 const registerSchema = z.object({
-  scope: z.enum(['task', 'tf_source', 'tf_action', 'document']),
+  scope: z.enum(['task', 'tf_source', 'tf_action', 'document', 'business_card']),
   parentId: z.string().uuid(),
   source: z.literal('uploaded'),
   key: z.string().min(1).max(500),
@@ -242,7 +245,12 @@ export async function registerAttachmentAction(
     (parsed.data.scope === 'tf_action' &&
       keyMatchesScope(parsed.data.key, { kind: 'tf_action', tfId: parsed.data.parentId })) ||
     (parsed.data.scope === 'document' &&
-      keyMatchesScope(parsed.data.key, { kind: 'document', documentId: parsed.data.parentId }));
+      keyMatchesScope(parsed.data.key, { kind: 'document', documentId: parsed.data.parentId })) ||
+    (parsed.data.scope === 'business_card' &&
+      keyMatchesScope(parsed.data.key, {
+        kind: 'business_card',
+        businessCardId: parsed.data.parentId,
+      }));
   if (!matches) return fail('Key does not match the declared parent.', epoch);
 
   const allowed = await canAddAttachmentForScope(me.id, parsed.data.scope, parsed.data.parentId);
@@ -266,7 +274,7 @@ export async function registerAttachmentAction(
 // ============================================================
 
 const driveSchema = z.object({
-  scope: z.enum(['task', 'tf_source', 'tf_action', 'document']),
+  scope: z.enum(['task', 'tf_source', 'tf_action', 'document', 'business_card']),
   parentId: z.string().uuid(),
   fileName: z.string().trim().min(1).max(200),
   driveUrl: z
@@ -320,7 +328,7 @@ export async function addDriveLinkAttachmentAction(
 
 async function writeAttachment(args: {
   me: { id: string; name?: string | null };
-  scope: 'task' | 'tf_source' | 'tf_action' | 'document';
+  scope: 'task' | 'tf_source' | 'tf_action' | 'document' | 'business_card';
   parentId: string;
   source: 'uploaded' | 'drive_link';
   fileName: string;
@@ -336,7 +344,9 @@ async function writeAttachment(args: {
         ? 'timeline_file_source'
         : args.scope === 'tf_action'
           ? 'timeline_file_action'
-          : 'document_record';
+          : args.scope === 'document'
+            ? 'document_record'
+            : 'business_card';
 
   try {
     const created = await prisma.attachment.create({
@@ -391,6 +401,10 @@ async function writeAttachment(args: {
       // A file upload is a meaningful update — surface it in "Recently modified".
       await touchTaskActivity(prisma, args.parentId);
       revalidatePath(`/tasks/${args.parentId}`);
+    } else if (args.scope === 'business_card') {
+      // No per-card activity log — just refresh the card + list.
+      revalidatePath(`/business-cards/${args.parentId}`);
+      revalidatePath('/business-cards');
     } else {
       // tf_source or tf_action
       if (args.scope === 'tf_action') {
@@ -497,6 +511,9 @@ export async function renameAttachmentAction(
       });
       await touchTaskActivity(prisma, att.ownerId);
       revalidatePath(`/tasks/${att.ownerId}`);
+    } else if (att.ownerType === 'business_card') {
+      revalidatePath(`/business-cards/${att.ownerId}`);
+      revalidatePath('/business-cards');
     } else {
       await prisma.timelineFileActivity.create({
         data: {
@@ -602,6 +619,8 @@ export async function deleteAttachmentAction(
           },
         });
         await touchTaskActivity(tx, att.ownerId);
+      } else if (att.ownerType === 'business_card') {
+        // No per-card activity log.
       } else {
         await tx.timelineFileActivity.create({
           data: {
@@ -629,6 +648,9 @@ export async function deleteAttachmentAction(
       revalidatePath('/document-centre');
     } else if (att.ownerType === 'task') {
       revalidatePath(`/tasks/${att.ownerId}`);
+    } else if (att.ownerType === 'business_card') {
+      revalidatePath(`/business-cards/${att.ownerId}`);
+      revalidatePath('/business-cards');
     } else {
       revalidatePath(`/timeline-files/${att.ownerId}`);
     }
