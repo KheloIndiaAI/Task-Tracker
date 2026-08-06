@@ -18,6 +18,7 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:document-centre": "tsx prisma/seed-document-centre.ts",
+    "db:seed:business-cards": "tsx prisma/seed-business-cards.ts",
     "db:studio": "prisma studio"
   },
   "prisma": {
