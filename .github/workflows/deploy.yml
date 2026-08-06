@@ -45,7 +45,17 @@ jobs:
           script: |
             set -e
             cd /var/www/myas
-            git pull origin main
+            # Take origin/main verbatim rather than merging into the server's
+            # working tree. `git pull` aborts the whole deploy if the checkout
+            # has drifted — a locally edited tracked file, or an untracked file
+            # that a new commit also adds ("would be overwritten by merge").
+            # The server is a deployment target, so any such drift is stale by
+            # definition. `reset --hard` discards it and also clobbers the
+            # colliding untracked files, which `pull` refuses to do. No
+            # `git clean`: gitignored server state (.env, node_modules, .next,
+            # pm2 logs) must survive, and reset alone leaves it untouched.
+            git fetch origin main
+            git reset --hard origin/main
             pnpm install --frozen-lockfile
             npx prisma generate
             npx prisma migrate deploy
