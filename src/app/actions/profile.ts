@@ -261,3 +261,47 @@ export async function updateMyProfileAction(
   revalidatePath(`/users/${me.id}`);
   return { ok: true, epoch };
 }
+
+// ============================================================
+// setWhatsappOptInAction — self-service WhatsApp opt-out toggle
+// ============================================================
+// Append this to src/app/actions/profile.ts (it reuses the existing imports:
+// auth, prisma, revalidatePath, logError). Called directly from the client
+// toggle with a boolean; binds the update to the session id only.
+
+export async function setWhatsappOptInAction(
+  enabled: boolean,
+): Promise<{ ok: boolean; error?: string }> {
+  const session = await auth();
+  if (!session?.user) return { ok: false, error: 'You are signed out.' };
+
+  const me = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { id: true, isActive: true, whatsappOptIn: true },
+  });
+  if (!me || !me.isActive) return { ok: false, error: 'Account not found.' };
+  if (me.whatsappOptIn === enabled) return { ok: true };
+
+  try {
+    await prisma.user.update({
+      where: { id: me.id },
+      data: { whatsappOptIn: enabled },
+    });
+    await prisma.auditLog.create({
+      data: {
+        actorId: me.id,
+        action: 'update',
+        entityType: 'user',
+        entityId: me.id,
+        before: { whatsappOptIn: me.whatsappOptIn },
+        after: { whatsappOptIn: enabled },
+      },
+    });
+  } catch (err) {
+    logError('setWhatsappOptInAction failed', err);
+    return { ok: false, error: 'Could not save changes.' };
+  }
+
+  revalidatePath('/profile');
+  return { ok: true };
+}

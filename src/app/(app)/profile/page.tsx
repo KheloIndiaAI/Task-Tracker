@@ -21,6 +21,7 @@ import {
   type HeadedDivisionOption,
 } from './_components/DelegationManager';
 import { PhoneEditor } from './_components/PhoneEditor';
+import { WhatsappOptInToggle } from './_components/WhatsappOptInToggle';
 import { WorkActivitiesEditor } from './_components/WorkActivitiesEditor';
 
 export default async function ProfilePage() {
@@ -242,6 +243,10 @@ export default async function ProfilePage() {
 
           <DetailRow icon="ti-phone" label="Phone" muted>
             <PhoneEditor phone={me.phone} />
+          </DetailRow>
+
+          <DetailRow icon="ti-brand-whatsapp" label="WhatsApp alerts" muted>
+            <WhatsappOptInToggle enabled={me.whatsappOptIn} hasPhone={!!me.phone} />
           </DetailRow>
 
           {me.supervisor ? (

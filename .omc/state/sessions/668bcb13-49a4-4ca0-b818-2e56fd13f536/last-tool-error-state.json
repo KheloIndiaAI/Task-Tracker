@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"echo \\\"=== deploy.yml history ===\\\" && git log --oneline -5 -- .github/workflows/deploy.yml\\necho \\\"\\\"\\necho \\\"=== was NEXT_BUILD_DIR in deploy.yml at the failing commit d646b59? ===\\\"\\ngi...",
+  "error": "Exit code 1\n=== deploy.yml history ===\nce8e4bd Fix fabricated action SHAs in deploy workflow\n24486e8 SAST Phase 3: infrastructure, headers, rate limiting (8 findings)\n6edbdd5 Fix H-6, H-9, H-14: board reorder, recurrence spawn, safe deploy\n86dd5a9 Fix CI: use pnpm 10 + Node 22 (Node 20 deprecated on GH Actions)\ndaad2e9 Fix CR-4, H-15, H-16, H-17, H-21: CI gate, seed PII, docs drift\n\n=== was NEXT_BUILD_DIR in deploy.yml at the failing commit d646b59? ===\n52:            NEXT_BUILD_DIR=.next-build ...",
+  "timestamp": "2026-07-20T07:51:28.577Z",
+  "retry_count": 1
+}

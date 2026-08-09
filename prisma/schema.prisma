@@ -220,6 +220,8 @@ model User {
   // Super-Admin-managed grant of access to the Business Cards module.
   // Access = is_super_admin OR this flag (see canAccessBusinessCards).
   canAccessBusinessCards  Boolean @default(false) @map("can_access_business_cards")
+  // Opt-out toggle for WhatsApp notifications (default on; user-editable on /profile).
+  whatsappOptIn       Boolean   @default(true) @map("whatsapp_opt_in")
   forcePasswordChange Boolean   @default(false) @map("force_password_change")
   passwordChangedAt   DateTime? @map("password_changed_at") @db.Timestamptz(6)
   lastLogin           DateTime? @map("last_login") @db.Timestamptz(6)
@@ -832,11 +834,39 @@ model Notification {
   readAt    DateTime?        @map("read_at") @db.Timestamptz(6)
   createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user       User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries NotificationDelivery[]
 
   @@index([userId, createdAt(sort: Desc)])
   @@index([userId, readAt])
   @@map("notifications")
+}
+
+// ============================================================
+// Notification delivery outbox (WhatsApp + future channels)
+// ============================================================
+
+/// One row per (notification, channel). The unique index is the dedupe key
+/// so a re-run of the WhatsApp drain cron can never double-send. A 504 from the
+/// provider is recorded as `unknown` and never auto-retried (no idempotency).
+model NotificationDelivery {
+  id                String    @id @default(uuid()) @db.Uuid
+  notificationId    String    @map("notification_id") @db.Uuid
+  channel           String // 'whatsapp'
+  status            String    @default("pending") // pending | sent | failed | skipped | unknown
+  toNumber          String?   @map("to_number")
+  templateName      String?   @map("template_name")
+  providerMessageId String?   @map("provider_message_id")
+  attempts          Int       @default(0)
+  lastError         String?   @map("last_error")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  sentAt            DateTime? @map("sent_at") @db.Timestamptz(6)
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@unique([notificationId, channel])
+  @@index([status])
+  @@map("notification_delivery")
 }
 
 // ============================================================

@@ -1,0 +1,216 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1786260407323,
+  "projectRoot": "/Users/manas/Desktop/Office/Task Tracker",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": ">=20.0.0",
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      },
+      {
+        "name": "TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "tsconfig.json"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "next",
+        "version": "14.2.35",
+        "category": "fullstack"
+      },
+      {
+        "name": "react",
+        "version": "18.3.1",
+        "category": "frontend"
+      },
+      {
+        "name": "react-dom",
+        "version": "18.3.1",
+        "category": "frontend"
+      },
+      {
+        "name": "vitest",
+        "version": "2.1.9",
+        "category": "testing"
+      }
+    ],
+    "packageManager": "pnpm",
+    "runtime": "Node.js 20.0.0"
+  },
+  "build": {
+    "buildCommand": "pnpm build",
+    "testCommand": "pnpm test",
+    "lintCommand": "pnpm lint",
+    "devCommand": "pnpm dev",
+    "scripts": {
+      "dev": "next dev",
+      "postinstall": "prisma generate",
+      "build": "prisma generate && next build",
+      "start": "next start",
+      "lint": "next lint",
+      "typecheck": "tsc --noEmit",
+      "test": "vitest run",
+      "test:watch": "vitest",
+      "db:generate": "prisma generate",
+      "db:push": "prisma db push",
+      "db:migrate": "prisma migrate dev",
+      "db:migrate:deploy": "prisma migrate deploy",
+      "db:seed": "tsx prisma/seed.ts",
+      "db:seed:document-centre": "tsx prisma/seed-document-centre.ts",
+      "db:seed:business-cards": "tsx prisma/seed-business-cards.ts",
+      "db:studio": "prisma studio"
+    }
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": "*.test.ts",
+    "fileOrganization": "type-based"
+  },
+  "structure": {
+    "isMonorepo": true,
+    "workspaces": [],
+    "mainDirectories": [
+      "docs",
+      "public",
+      "scripts",
+      "src",
+      "tests"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 12,
+      "lastAccessed": 1786260407310,
+      "keyFiles": [
+        "COLOUR_TOKENS.css",
+        "COMPONENTS.md",
+        "DATA_MODEL.md",
+        "DOCUMENT_CENTRE.md",
+        "GA4_INTEGRATION_GUIDE.md"
+      ]
+    },
+    "prisma": {
+      "path": "prisma",
+      "purpose": null,
+      "fileCount": 7,
+      "lastAccessed": 1786260407312,
+      "keyFiles": [
+        "clean-data.ts",
+        "schema.prisma",
+        "seed-business-cards.ts",
+        "seed-document-centre.ts",
+        "seed-mock.ts"
+      ]
+    },
+    "public": {
+      "path": "public",
+      "purpose": "Public files",
+      "fileCount": 2,
+      "lastAccessed": 1786260407312,
+      "keyFiles": [
+        "offline.html",
+        "sw.js"
+      ]
+    },
+    "scripts": {
+      "path": "scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 7,
+      "lastAccessed": 1786260407312,
+      "keyFiles": [
+        "credentials.html",
+        "diagnose-pmu-tree.ts",
+        "export-data.ts",
+        "export.json",
+        "import-tasks.ts"
+      ]
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 0,
+      "lastAccessed": 1786260407312,
+      "keyFiles": []
+    },
+    "tests": {
+      "path": "tests",
+      "purpose": "Test files",
+      "fileCount": 16,
+      "lastAccessed": 1786260407312,
+      "keyFiles": [
+        "admin-users-order.test.ts",
+        "business-cards-access.test.ts",
+        "calendar-filters.test.ts",
+        "delegation-window.test.ts",
+        "divisions.test.ts"
+      ]
+    },
+    "prisma/migrations": {
+      "path": "prisma/migrations",
+      "purpose": "Database migrations",
+      "fileCount": 1,
+      "lastAccessed": 1786260407313,
+      "keyFiles": [
+        "migration_lock.toml"
+      ]
+    },
+    "src/app": {
+      "path": "src/app",
+      "purpose": "Application code",
+      "fileCount": 6,
+      "lastAccessed": 1786260407313,
+      "keyFiles": [
+        "favicon.ico",
+        "global-error.tsx",
+        "globals.css"
+      ]
+    },
+    "src/components": {
+      "path": "src/components",
+      "purpose": "UI components",
+      "fileCount": 2,
+      "lastAccessed": 1786260407313,
+      "keyFiles": [
+        "AnalyticsBadge.tsx",
+        "DivisionAccordion.tsx"
+      ]
+    },
+    "src/lib": {
+      "path": "src/lib",
+      "purpose": "Library code",
+      "fileCount": 31,
+      "lastAccessed": 1786260407313,
+      "keyFiles": [
+        "activity.ts",
+        "admin-users-order.ts",
+        "audit.ts"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "next.config.mjs",
+      "accessCount": 1,
+      "lastAccessed": 1784533846691,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}
