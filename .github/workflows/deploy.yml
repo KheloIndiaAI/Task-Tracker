@@ -13,16 +13,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
       - uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2 # v4.0.0
         with:
-          version: 10
-
+          version: 9
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: pnpm
-
       - run: pnpm install --frozen-lockfile
       - run: npx prisma generate
       - run: pnpm tsc --noEmit
@@ -32,53 +29,92 @@ jobs:
   deploy:
     needs: quality-gate
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # required for AWS OIDC
+      contents: read
+    env:
+      AWS_REGION: ap-south-1
+      ECR_REPO: 114171679953.dkr.ecr.ap-south-1.amazonaws.com/task-tracker
+      CLUSTER: tt-cluster
+      SERVICE: tt-service
+      TASK_FAMILY: tt-task
+      CONTAINER: tt-app
+      SUBNETS: subnet-06a1602c7658528c7,subnet-064ef2b104d1d5737
+      SG: sg-08ab0e12a509e167a
+      ROLE_ARN: arn:aws:iam::114171679953:role/tt-github-deploy
     steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@2ead5e36573f08b82fbfce1504f1a4b05a647c6f # v1.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ubuntu
-          key: ${{ secrets.EC2_SSH_KEY }}
-          # SSH key should use command= restriction in authorized_keys.
-          # Rotate quarterly. Restrict inbound SSH to GitHub Actions IPs
-          # via security group.
-          script: |
-            set -e
-            cd /var/www/myas
-            # Take origin/main verbatim rather than merging into the server's
-            # working tree. `git pull` aborts the whole deploy if the checkout
-            # has drifted — a locally edited tracked file, or an untracked file
-            # that a new commit also adds ("would be overwritten by merge").
-            # The server is a deployment target, so any such drift is stale by
-            # definition. `reset --hard` discards it and also clobbers the
-            # colliding untracked files, which `pull` refuses to do. No
-            # `git clean`: gitignored server state (.env, node_modules, .next,
-            # pm2 logs) must survive, and reset alone leaves it untouched.
-            git fetch origin main
-            git reset --hard origin/main
-            pnpm install --frozen-lockfile
-            npx prisma generate
-            npx prisma migrate deploy
-            # tsconfig `include` hardcodes `.next/types/**/*.ts`, so the build's
-            # type-check validates whatever sits in .next/types — NOT the fresh
-            # .next-build/types this deploy writes. next build never prunes type
-            # stubs for routes deleted from source, so a stale .next/types keeps
-            # a stub for a gone route (e.g. attachments/[id]/print) and fails the
-            # check. Clear both the prior build dir and the stale type stubs so
-            # the type-check only sees current routes. .next/types is build-time
-            # only (never served), so removing it can't disrupt the live app.
-            rm -rf .next-build .next/types
-            NEXT_BUILD_DIR=.next-build pnpm build
-            rm -rf .next-old
-            [ -d .next ] && mv .next .next-old
-            mv .next-build .next
-            pm2 restart myas
-            sleep 5
-            if ! curl -sf http://localhost:3000/api/auth/providers > /dev/null 2>&1; then
-              echo "Health check failed — rolling back"
-              pm2 stop myas
-              rm -rf .next
-              mv .next-old .next
-              pm2 restart myas
-              exit 1
-            fi
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up QEMU (for arm64 build)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image (linux/arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          provenance: false
+          tags: |
+            ${{ env.ECR_REPO }}:latest
+            ${{ env.ECR_REPO }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Register new task definition revision
+        id: taskdef
+        run: |
+          set -euo pipefail
+          NEW_IMAGE="${ECR_REPO}:${GITHUB_SHA}"
+          aws ecs describe-task-definition --task-definition "$TASK_FAMILY" \
+            --query 'taskDefinition' --output json > td.json
+          jq --arg IMG "$NEW_IMAGE" --arg C "$CONTAINER" '
+            .containerDefinitions |= map(if .name==$C then .image=$IMG else . end)
+            | del(.taskDefinitionArn,.revision,.status,.requiresAttributes,
+                  .compatibilities,.registeredAt,.registeredBy,.deregisteredAt)
+          ' td.json > td-new.json
+          NEW_TD=$(aws ecs register-task-definition --cli-input-json file://td-new.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "arn=$NEW_TD" >> "$GITHUB_OUTPUT"
+          echo "Registered: $NEW_TD"
+
+      - name: Run DB migrations (prisma migrate deploy) as one-off ECS task
+        run: |
+          set -euo pipefail
+          IFS=',' read -r S1 S2 <<< "$SUBNETS"
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "$CLUSTER" \
+            --task-definition "${{ steps.taskdef.outputs.arn }}" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$S1,$S2],securityGroups=[$SG],assignPublicIp=DISABLED}" \
+            --overrides '{"containerOverrides":[{"name":"'"$CONTAINER"'","command":["npx","prisma","migrate","deploy"]}]}' \
+            --query 'tasks[0].taskArn' --output text)
+          echo "Migration task: $TASK_ARN"
+          aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$TASK_ARN"
+          EXIT=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[0].exitCode' --output text)
+          REASON=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$TASK_ARN" \
+            --query 'tasks[0].stoppedReason' --output text)
+          echo "Migration exit code: $EXIT ($REASON)"
+          [ "$EXIT" = "0" ] || { echo "Migrations FAILED — not deploying"; exit 1; }
+
+      - name: Deploy — update service to new task definition
+        run: |
+          set -euo pipefail
+          aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
+            --task-definition "${{ steps.taskdef.outputs.arn }}" >/dev/null
+          echo "Waiting for service to stabilize..."
+          aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"
+          echo "Deployed ${GITHUB_SHA} to $SERVICE."
