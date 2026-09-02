@@ -45,6 +45,14 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - name: Debug OIDC subject
+        run: |
+          RESP=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com")
+          JWT=$(echo "$RESP" | jq -r '.value')
+          P=$(echo "$JWT" | cut -d. -f2); M=$(( ${#P} % 4 )); [ "$M" -ne 0 ] && P="$P$(printf '=%.0s' $(seq 1 $((4-M))))"
+          echo "---- OIDC token claims ----"
+          echo "$P" | tr '_-' '/+' | base64 -d | jq '{sub, aud, repository, repository_owner, ref}'
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
