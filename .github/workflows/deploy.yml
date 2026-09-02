@@ -50,8 +50,13 @@ jobs:
           RESP=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com")
           JWT=$(echo "$RESP" | jq -r '.value')
           P=$(echo "$JWT" | cut -d. -f2); M=$(( ${#P} % 4 )); [ "$M" -ne 0 ] && P="$P$(printf '=%.0s' $(seq 1 $((4-M))))"
-          echo "---- OIDC token claims ----"
-          echo "$P" | tr '_-' '/+' | base64 -d | jq '{sub, aud, repository, repository_owner, ref}'
+          CLAIMS=$(echo "$P" | tr '_-' '/+' | base64 -d)
+          {
+            echo "## OIDC token claims (for trust policy)";
+            echo '```json';
+            echo "$CLAIMS" | jq '{sub, aud, repository, repository_owner, ref}';
+            echo '```';
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
