@@ -9,7 +9,7 @@
 ## Tech stack
 
 - **Next.js 14** (App Router) — frontend + backend (Server Components, Server Actions, Route Handlers)
-- **Postgres** — self-hosted. App owns the database
+- **Postgres** — App owns the database. **Production: AWS RDS PostgreSQL 16** (ap-south-1, private, encrypted). Local dev: any Postgres (container or Neon)
 - **Prisma** — ORM, schema, migrations. Prisma client lives in `src/lib/db/`
 - **NextAuth (Auth.js)** with the Prisma adapter, Credentials provider (username + password), JWT sessions. Config in `src/lib/auth/`
 - **S3-compatible object storage** for task attachments — default deployment target: **AWS S3 `ap-south-1` (Mumbai)** for India data residency. Swappable to **MinIO** (fully on-prem) or **Cloudflare R2** (cheap, no egress) without code changes; wire via the AWS SDK
@@ -18,7 +18,7 @@
 - **Tabler Icons** (outline by default; filled only inside pills) from `@tabler/icons-webfont@2.44.0`
 - **Google Fonts**: Manrope (body/UI), Newsreader (headings/quotes), JetBrains Mono (ref numbers, usernames)
 
-**Deferred** (decide when the first screen exists, not before): form library (`react-hook-form` + `zod` likely), server-state cache (TanStack Query likely), hosting, CI.
+**Deferred** (decide when the first screen exists, not before): form library (`react-hook-form` + `zod` likely), server-state cache (TanStack Query likely). *Hosting & CI are decided — production runs on **AWS ECS Fargate** (ap-south-1) with **GitHub Actions** CI/CD triggered from the `dev` branch; see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).*
 
 ## Local development
 
