@@ -1,0 +1,17 @@
+node_modules
+.next
+.git
+.gitignore
+npm-debug.log*
+.env
+.env.*
+Dockerfile
+.dockerignore
+pnpm-workspace.yaml
+tt-*.sh
+tt.env
+.vscode
+.idea
+coverage
+.DS_Store
+*.log
