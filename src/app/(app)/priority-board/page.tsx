@@ -6,7 +6,7 @@ import { USER_SUMMARY_SELECT } from '@/lib/prisma-selects';
 import { initialsOf } from '@/lib/format';
 import { buildVisibilityClauses } from '@/lib/visibility';
 
-import { Board, BoardSearch, type BoardTask } from './_components/Board';
+import { Board, BoardSearch, PrintBoardButton, type BoardTask } from './_components/Board';
 import { RemoveModeProvider, RemoveToggle } from './_components/RemoveMode';
 import { AccordionProvider } from './_components/AccordionState';
 
@@ -100,14 +100,18 @@ export default async function PriorityBoardPage() {
           </p>
         </div>
 
-        {canCurate ? (
-          // Top-right on desktop; stacks full-width under the title on mobile.
-          // The Remove toggle sits directly below the search box.
-          <div className="w-full md:w-auto md:pt-1 shrink-0 flex flex-col gap-2 items-stretch md:items-end">
-            <BoardSearch />
-            <RemoveToggle />
-          </div>
-        ) : null}
+        {/* Top-right on desktop; stacks full-width under the title on mobile.
+            Print is available to every viewer; search + remove are
+            curator-only. */}
+        <div className="w-full md:w-auto md:pt-1 shrink-0 flex flex-col gap-2 items-stretch md:items-end">
+          {canCurate ? (
+            <>
+              <BoardSearch />
+              <RemoveToggle />
+            </>
+          ) : null}
+          <PrintBoardButton />
+        </div>
       </header>
 
       {totalOnBoard === 0 && !canCurate ? (

@@ -174,6 +174,40 @@ body.sortable-dragging .pb-accordion-body {
 }
 
 /* ============================================================
+   JS Priority Board — printing (Print board button, Board.tsx).
+   Forces every lane open regardless of the mobile accordion's
+   collapsed state — a printed handout must show all four lanes, not
+   whichever happened to be expanded on screen — and keeps the
+   board's lane/status/priority colours instead of the browser's
+   default print behaviour of stripping backgrounds to save ink.
+   The !important pair guards against the print viewport occasionally
+   also matching the desktop (min-width: 768px) rule above; both
+   would otherwise agree anyway, but this keeps it certain rather
+   than relying on source order.
+   ============================================================ */
+@media print {
+  .pb-accordion-body {
+    display: flex !important;
+    grid-template-rows: none !important;
+    flex: 1 1 auto;
+  }
+  .pb-accordion-inner {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+  }
+  .board-print-area,
+  .board-print-area * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  @page {
+    size: landscape;
+    margin: 12mm;
+  }
+}
+
+/* ============================================================
    Division accordion — collapsible groups on the tasks and
    timeline-files lists (Group by division). Smooth height via the
    grid-template-rows 0fr→1fr trick. Unlike the priority-board
