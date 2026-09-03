@@ -25,6 +25,10 @@ ENV DATABASE_URL="postgresql://build:build@127.0.0.1:5432/build?schema=public"
 ENV DIRECT_URL="postgresql://build:build@127.0.0.1:5432/build?schema=public"
 ENV AUTH_SECRET="build-time-placeholder"
 ENV AUTH_TRUST_HOST="true"
+# S3 vars at build time so next.config.mjs bakes the bucket into the CSP connect-src
+ENV S3_ENDPOINT="https://s3.ap-south-1.amazonaws.com"
+ENV S3_REGION="ap-south-1"
+ENV S3_BUCKET="task-tracker-storage-bucket"
 RUN pnpm build
 
 # ---- runner: only what's needed to `next start` ----
