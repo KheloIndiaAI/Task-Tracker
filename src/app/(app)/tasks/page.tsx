@@ -1,4 +1,5 @@
 import { Suspense } from 'react';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { PullToRefresh } from '@/components/ui';
@@ -8,6 +9,7 @@ import { prisma } from '@/lib/db';
 import { formatDue, initialsOf } from '@/lib/format';
 import { canManageTask, getHeadedDivisionIds } from '@/lib/rbac';
 import { getPmuTeamMemberIds } from '@/lib/pmu-team';
+import { cn } from '@/lib/utils';
 import { fetchTaskCounts, fetchVisibleTasks, getPmuParentDivisionHeadId, type TaskFilter, type TaskSort } from '@/lib/visibility';
 
 import { DivisionControls } from './_components/DivisionControls';
@@ -186,6 +188,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
                           <TaskRow key={t.id} task={t} caller={permCaller} canWatchlist={canWatchlist} />
                         ))}
                       </ul>
+                      <DivisionTaskNameList tasks={group.tasks} />
                     </GroupedDivisionAccordion>
                   ))}
                 </div>
@@ -303,6 +306,52 @@ function TaskRow({
         canWatchlist={canWatchlist}
       />
     </li>
+  );
+}
+
+/**
+ * Compact name-only list of every task in a division, under its card grid.
+ * The cards above are the detailed view; a division with dozens of tasks
+ * (Office of JS, Khelo India, …) is faster to scan as a dense list of names
+ * than as a wall of cards, so this adds that view rather than replacing the
+ * cards. Same responsive column count as the card grid so it fills the same
+ * width. Each row links straight to the task.
+ */
+function DivisionTaskNameList({ tasks }: { tasks: VisibleTask[] }) {
+  return (
+    <div className="mt-4 pt-3 border-t border-line-2">
+      <h4 className="section-label mb-1.5">Task list</h4>
+      <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-4">
+        {tasks.map((t) => {
+          const due = formatDue(t.dueDate);
+          const isCompleted = t.status === 'completed';
+          return (
+            <li key={t.id} className="min-w-0">
+              <Link
+                href={`/tasks/${t.id}`}
+                className="group flex items-baseline gap-2 px-2 py-1.5 rounded-md hover:bg-bg transition-colors"
+              >
+                {t.refNumber ? (
+                  <span className="font-mono text-[10px] text-ink-3 tracking-wide shrink-0">
+                    {t.refNumber}
+                  </span>
+                ) : null}
+                <span
+                  className={cn(
+                    'min-w-0 truncate text-[13px] leading-snug transition-colors group-hover:text-primary',
+                    isCompleted && 'text-ink-3 line-through decoration-ink-4',
+                    !isCompleted && due.tone === 'overdue' && 'text-urgent font-medium',
+                    !isCompleted && due.tone !== 'overdue' && 'text-ink',
+                  )}
+                >
+                  {t.name}
+                </span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
