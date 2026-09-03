@@ -171,10 +171,12 @@ export function CreateTimelineFileDialog({
   const onPickFile = () => fileInputRef.current?.click();
 
   const onFileChosen = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
+    // Materialise the FileList into a real array BEFORE clearing the input.
+    // e.target.files is a live FileList; setting value='' first empties it,
+    // which would leave arr empty and silently queue nothing.
+    const arr = e.target.files ? Array.from(e.target.files) : [];
     e.target.value = '';
-    if (!files) return;
-    const arr = Array.from(files);
+    if (arr.length === 0) return;
     const oversize = arr.find((f) => f.size > MAX_UPLOAD_BYTES);
     if (oversize) {
       setUploadError(`${oversize.name} exceeds ${formatBytes(MAX_UPLOAD_BYTES)}.`);
