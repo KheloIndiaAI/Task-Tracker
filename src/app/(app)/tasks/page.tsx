@@ -183,12 +183,12 @@ export default async function TasksPage({ searchParams }: PageProps) {
                       count={group.tasks.length}
                       unit="task"
                     >
+                      <DivisionTaskNameList tasks={group.tasks} />
                       <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 md:gap-3">
                         {group.tasks.map((t) => (
                           <TaskRow key={t.id} task={t} caller={permCaller} canWatchlist={canWatchlist} />
                         ))}
                       </ul>
-                      <DivisionTaskNameList tasks={group.tasks} />
                     </GroupedDivisionAccordion>
                   ))}
                 </div>
@@ -310,19 +310,20 @@ function TaskRow({
 }
 
 /**
- * Compact name-only list of every task in a division, under its card grid.
- * The cards above are the detailed view; a division with dozens of tasks
+ * Compact name-only list of every task in a division, above its card grid.
+ * The cards below are the detailed view; a division with dozens of tasks
  * (Office of JS, Khelo India, …) is faster to scan as a dense list of names
  * than as a wall of cards, so this adds that view rather than replacing the
  * cards. Same responsive column count as the card grid so it fills the same
- * width. Each row links straight to the task.
+ * width. Each row links straight to the task. The leading number is a plain
+ * per-division serial (1, 2, 3, …), not the task's ref number.
  */
 function DivisionTaskNameList({ tasks }: { tasks: VisibleTask[] }) {
   return (
-    <div className="mt-4 pt-3 border-t border-line-2">
+    <div className="mb-4 pb-3 border-b border-line-2">
       <h4 className="section-label mb-1.5">Task list</h4>
       <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-4">
-        {tasks.map((t) => {
+        {tasks.map((t, i) => {
           const due = formatDue(t.dueDate);
           const isCompleted = t.status === 'completed';
           return (
@@ -331,11 +332,9 @@ function DivisionTaskNameList({ tasks }: { tasks: VisibleTask[] }) {
                 href={`/tasks/${t.id}`}
                 className="group flex items-baseline gap-2 px-2 py-1.5 rounded-md hover:bg-bg transition-colors"
               >
-                {t.refNumber ? (
-                  <span className="font-mono text-[10px] text-ink-3 tracking-wide shrink-0">
-                    {t.refNumber}
-                  </span>
-                ) : null}
+                <span className="font-mono text-[10px] text-ink-3 tracking-wide tabular-nums shrink-0">
+                  {i + 1}.
+                </span>
                 <span
                   className={cn(
                     'min-w-0 truncate text-[13px] leading-snug transition-colors group-hover:text-primary',
