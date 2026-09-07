@@ -292,10 +292,12 @@ export function Board({ tasksByLane, canCurate }: BoardProps) {
 
       <div
         className={cn(
-          'grid gap-3 md:gap-4',
+          'board-print-area grid gap-3 md:gap-4',
           // Mobile: a single vertical column of collapsible accordion panels.
-          // Tablet: 2 columns; laptop+: the classic 4-column board.
-          'grid-cols-1 md:grid-cols-2 lg:grid-cols-4',
+          // Tablet: 2 columns; laptop+: the classic 4-column board. Print
+          // always lays out all four lanes side by side regardless of the
+          // screen size the print was triggered from.
+          'grid-cols-1 md:grid-cols-2 lg:grid-cols-4 print:grid-cols-4 print:gap-2',
         )}
       >
         {LANES.map((lane) => (
@@ -314,6 +316,26 @@ export function Board({ tasksByLane, canCurate }: BoardProps) {
         ))}
       </div>
     </div>
+  );
+}
+
+// ------------------------------------------------------------
+// PrintBoardButton — triggers the browser's print dialog; the
+// board-print-area rules below (globals.css) format the four lanes
+// for a landscape page in colour. "Save as PDF" in that dialog is
+// how this becomes a shareable PDF, so no PDF library is needed.
+// ------------------------------------------------------------
+
+export function PrintBoardButton() {
+  return (
+    <button
+      type="button"
+      onClick={() => window.print()}
+      className="print:hidden inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-line bg-panel text-[12.5px] font-medium text-ink-2 shadow-card transition-colors hover:border-ink-4 hover:text-ink"
+    >
+      <i className="ti ti-printer text-[14px]" aria-hidden="true" />
+      Print board
+    </button>
   );
 }
 
@@ -672,7 +694,11 @@ function Lane({
       aria-labelledby={`lane-${lane.id}`}
       style={LANE_TINT[lane.id]}
       className={cn(
-        'rounded-2xl overflow-hidden md:flex md:flex-col md:min-h-[420px]',
+        // Taller lanes so the board reads as a substantial working surface
+        // rather than a strip with a lot of dead space beneath 1-2 items.
+        // Print drops the floor back to the lane's real content height —
+        // a shared handout should be dense, not padded with blank paper.
+        'rounded-2xl overflow-hidden md:flex md:flex-col md:min-h-[600px] print:min-h-0',
         LANE_BORDER[lane.id],
         isGlass && 'glass-card',
       )}
@@ -765,7 +791,12 @@ function Lane({
 }
 
 // ------------------------------------------------------------
-// LaneCard — compact variant of TaskCard for the board
+// LaneCard — dense draggable list row for the board (was a padded
+// card; a lane with a dozen tasks made the whole board unreadably
+// tall). Keeps every piece of information and every interaction the
+// card had — drag handle, priority dot, ref number, status, due
+// date, owner avatar, remove-mode button, click-through to the task
+// — just laid out as a two-line row instead of a boxed card.
 // ------------------------------------------------------------
 
 function LaneCard({
@@ -781,18 +812,13 @@ function LaneCard({
 }) {
   const due = formatDue(task.due);
   return (
-    <article
+    <div
       className={cn(
-        'relative bg-gradient-to-b from-accent-tint to-panel border border-accent-line rounded-xl p-2.5 shadow-card',
+        'relative flex flex-col gap-1 border-l-2 border-accent border-b border-line-2 py-1.5 pl-2.5 pr-2 transition-colors hover:bg-panel/70',
         canCurate ? 'cursor-grab active:cursor-grabbing' : 'cursor-default',
         removeMode && 'pr-8',
       )}
     >
-      <span
-        aria-hidden="true"
-        className="absolute left-0 top-3 bottom-3 w-[3px] rounded-r bg-accent"
-      />
-
       {removeMode ? (
         <button
           type="button"
@@ -803,31 +829,23 @@ function LaneCard({
           }}
           aria-label={`Remove ${task.name} from the board`}
           title="Remove from board"
-          className="lane-remove-btn absolute top-1 right-1 z-10 grid h-6 w-6 place-items-center rounded-full bg-urgent text-white shadow-card transition-colors hover:bg-urgent/90 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-urgent"
+          className="lane-remove-btn print:hidden absolute top-1 right-1 z-10 grid h-6 w-6 place-items-center rounded-full bg-urgent text-white shadow-card transition-colors hover:bg-urgent/90 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-urgent"
         >
           <i className="ti ti-x text-[13px]" aria-hidden="true" />
         </button>
       ) : null}
 
-      <div className="flex items-start gap-1.5">
+      {/* Line 1 — drag handle, priority, ref number, name, division (right) */}
+      <div className="flex items-center gap-1.5">
         {canCurate ? (
           <i
-            className="ti ti-grip-vertical text-[13px] text-ink-3 mt-[2px]"
+            className="ti ti-grip-vertical text-[13px] text-ink-3 shrink-0 print:hidden"
             aria-hidden="true"
           />
         ) : null}
-        <Link
-          href={`/tasks/${task.id}`}
-          className="flex-1 min-w-0 hover:underline"
-        >
-          {task.refNumber ? (
-            <span className="font-mono text-[9px] text-ink-3 tracking-wide block">{task.refNumber}</span>
-          ) : null}
-          <span className="text-[13px] font-medium text-ink leading-snug">{task.name}</span>
-        </Link>
         <span
           className={cn(
-            'w-2 h-2 rounded-full mt-1.5 shrink-0',
+            'w-2 h-2 rounded-full shrink-0',
             task.priority === 'urgent' && 'bg-urgent',
             task.priority === 'high' && 'bg-high',
             task.priority === 'medium' && 'bg-medium',
@@ -835,10 +853,25 @@ function LaneCard({
           )}
           aria-label={`${task.priority} priority`}
         />
+        {task.refNumber ? (
+          <span className="font-mono text-[9.5px] text-ink-3 tracking-wide shrink-0">
+            {task.refNumber}
+          </span>
+        ) : null}
+        <Link
+          href={`/tasks/${task.id}`}
+          className="group flex-1 min-w-0 flex items-baseline justify-between gap-2"
+        >
+          <span className="truncate text-[13px] font-medium text-ink leading-snug group-hover:underline">
+            {task.name}
+          </span>
+          <span className="shrink-0 max-w-[45%] truncate text-[10.5px] text-ink-3">
+            {task.divisionName}
+          </span>
+        </Link>
       </div>
 
-      <p className="text-[10px] text-ink-3 mt-1 mb-1.5">{task.divisionName}</p>
-
+      {/* Line 2 — status, due date, owner */}
       <div className="flex items-center justify-between gap-2">
         <Pill
           variant="status"
@@ -864,6 +897,6 @@ function LaneCard({
           />
         </div>
       </div>
-    </article>
+    </div>
   );
 }

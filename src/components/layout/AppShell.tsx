@@ -67,11 +67,13 @@ export function AppShell({
 
   return (
     <div className="min-h-dvh bg-bg flex flex-col">
-      <AppHeader
-        onOpenDrawer={() => setDrawerOpen(true)}
-        notifications={notifications}
-        user={user}
-      />
+      <div className="print:hidden">
+        <AppHeader
+          onOpenDrawer={() => setDrawerOpen(true)}
+          notifications={notifications}
+          user={user}
+        />
+      </div>
 
       <MobileNavDrawer
         open={drawerOpen}
@@ -89,7 +91,7 @@ export function AppShell({
         {/* Sidebar — visible md+ only */}
         <aside
           aria-label="Primary navigation"
-          className="hidden md:block border-r border-line bg-panel"
+          className="hidden md:block border-r border-line bg-panel print:hidden"
         >
           <div className="sticky top-16">
             <Sidebar
@@ -115,18 +117,20 @@ export function AppShell({
         </main>
       </div>
 
-      <MobileBottomNav
-        isSuperAdmin={user.isSuperAdmin}
-        isOsd={user.isOsd}
-        isJs={user.isJs}
-        canAccessDocumentCentre={user.canAccessDocumentCentre}
-        canAccessBusinessCards={user.canAccessBusinessCards}
-        canAccessTimelineFiles={user.canAccessTimelineFiles}
-        unreadCount={notifications.unreadCount}
-      />
+      <div className="print:hidden">
+        <MobileBottomNav
+          isSuperAdmin={user.isSuperAdmin}
+          isOsd={user.isOsd}
+          isJs={user.isJs}
+          canAccessDocumentCentre={user.canAccessDocumentCentre}
+          canAccessBusinessCards={user.canAccessBusinessCards}
+          canAccessTimelineFiles={user.canAccessTimelineFiles}
+          unreadCount={notifications.unreadCount}
+        />
 
-      {/* Spacer so content isn't hidden behind the fixed bottom nav on mobile */}
-      <div className="h-14 md:hidden" aria-hidden="true" />
+        {/* Spacer so content isn't hidden behind the fixed bottom nav on mobile */}
+        <div className="h-14 md:hidden" aria-hidden="true" />
+      </div>
     </div>
   );
 }
