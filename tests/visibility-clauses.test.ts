@@ -192,85 +192,80 @@ describe('buildVisibilityClausesFrom — roles', () => {
   });
 });
 
-describe('buildVisibilityClausesFrom — personal-task visibility for leadership', () => {
-  it('super admin and OSD read personal tasks ministry-wide, unscoped', () => {
+describe('buildVisibilityClausesFrom — personal-task visibility grant', () => {
+  it('super admin and OSD read personal tasks by role, without the grant', () => {
     for (const me of [caller({ isSuperAdmin: true }), caller({ hierarchySlot: 'osd' })]) {
+      // canSeePersonalTasks deliberately omitted — their access is role-based.
       expect(buildVisibilityClausesFrom(me, [])).toContainEqual({ visibility: 'personal' });
     }
   });
 
-  it('a Director reads personal tasks across their member divisions', () => {
+  it('the grant covers every member division', () => {
     const clauses = buildVisibilityClausesFrom(
       caller({ hierarchySlot: 'director', divisionId: KI }),
       [],
       [],
-      { memberDivisionIds: [KI, NSDF] },
+      { memberDivisionIds: [KI, NSDF], canSeePersonalTasks: true },
     );
     expect(personalRoleClause(clauses)?.divisionId?.in?.sort()).toEqual([KI, NSDF].sort());
   });
 
-  it('an Under Secretary reads personal tasks across their member divisions', () => {
+  it('the grant covers headed divisions alongside member ones', () => {
     const clauses = buildVisibilityClausesFrom(
-      caller({ hierarchySlot: 'under_secretary', divisionId: KI }),
-      [],
-    );
-    expect(personalRoleClause(clauses)?.divisionId?.in).toEqual([KI]);
-  });
-
-  it('a head reads the headed division’s personal tasks whatever their slot', () => {
-    // An ASO who holds a delegation over NSDF: personal reach follows the
-    // headship (NSDF) and does NOT extend to their own home board (KI),
-    // because 'aso' is not a leadership slot.
-    const clauses = buildVisibilityClausesFrom(
-      caller({ hierarchySlot: 'aso', divisionId: KI }),
-      [NSDF],
-    );
-    expect(personalRoleClause(clauses)?.divisionId?.in).toEqual([NSDF]);
-  });
-
-  it('a Director who also heads another division covers both', () => {
-    const clauses = buildVisibilityClausesFrom(
-      caller({ hierarchySlot: 'director', divisionId: ABD }),
+      caller({ hierarchySlot: 'deputy_secretary', divisionId: ABD }),
       [NSDF],
       [],
-      { memberDivisionIds: [ABD] },
+      { memberDivisionIds: [ABD], canSeePersonalTasks: true },
     );
     expect(personalRoleClause(clauses)?.divisionId?.in?.sort()).toEqual([ABD, NSDF].sort());
   });
 
-  it('grants nothing to Section Officer, ASO, Consultant or PMU members', () => {
-    for (const me of [
-      caller({ hierarchySlot: 'section_officer' }),
-      caller({ hierarchySlot: 'aso' }),
-      caller({ hierarchySlot: 'consultant' }),
-      caller({ isPmu: true }),
-    ]) {
-      expect(personalRoleClause(buildVisibilityClausesFrom(me, []))).toBeUndefined();
-    }
+  it('works for any slot — the flag decides, not the rank', () => {
+    // A Section Officer the Super Admin has explicitly granted it.
+    const clauses = buildVisibilityClausesFrom(
+      caller({ hierarchySlot: 'section_officer', divisionId: KI }),
+      [],
+      [],
+      { canSeePersonalTasks: true },
+    );
+    expect(personalRoleClause(clauses)?.divisionId?.in).toEqual([KI]);
   });
 
-  it('grants nothing to Deputy Secretary, JS or HMYAS without a headship', () => {
-    // Deliberately excluded when the rule was written (2026-09-07) — the ask
-    // named Super Admin, OSD, Director, Under Secretary and heads. This test
-    // pins that so widening the set is a conscious edit, not an accident.
+  it('grants nothing without the flag, whatever the slot or headship', () => {
+    // Turning the toggle off genuinely removes the access — there is no
+    // slot-shaped hole left behind for leadership ranks.
     for (const me of [
+      caller({ hierarchySlot: 'director' }),
       caller({ hierarchySlot: 'deputy_secretary' }),
+      caller({ hierarchySlot: 'under_secretary' }),
+      caller({ hierarchySlot: 'section_officer' }),
+      caller({ hierarchySlot: 'aso' }),
       caller({ hierarchySlot: 'js' }),
       caller({ hierarchySlot: 'hmyas' }),
     ]) {
-      expect(personalRoleClause(buildVisibilityClausesFrom(me, []))).toBeUndefined();
+      expect(personalRoleClause(buildVisibilityClausesFrom(me, [NSDF]))).toBeUndefined();
     }
   });
 
-  it('never lets a PMU member reach personal tasks through the PMU branch', () => {
+  it('never lets a PMU member reach personal tasks, even with the flag set', () => {
     const clauses = buildVisibilityClausesFrom(
       caller({ isPmu: true, pmuId: 'div-pmu', hierarchySlot: 'director' }),
       [],
       ['me', 'mate-1'],
-      { memberDivisionIds: [KI] },
+      { memberDivisionIds: [KI], canSeePersonalTasks: true },
     );
-    // Even a Director-slotted PMU member returns from the PMU branch before the
-    // leadership grant — PMU isolation wins.
+    // The PMU branch returns before the grant is considered — isolation wins.
+    expect(personalRoleClause(clauses)).toBeUndefined();
+  });
+
+  it('never lets a JS user reach personal tasks, even with the flag set', () => {
+    const clauses = buildVisibilityClausesFrom(
+      caller({ hierarchySlot: 'js', divisionId: KI }),
+      [],
+      [],
+      { canSeePersonalTasks: true },
+    );
+    // The JS branch also returns early; JS keeps its priority-board surface.
     expect(personalRoleClause(clauses)).toBeUndefined();
   });
 });

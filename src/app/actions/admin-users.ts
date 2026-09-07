@@ -234,6 +234,10 @@ const createUserSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'on'),
+  canSeePersonalTasks: z
+    .string()
+    .optional()
+    .transform((v) => v === 'on'),
   // phone + work activities are self-service on /profile — the admin form
   // never collects them, so they are intentionally absent here.
 });
@@ -266,6 +270,7 @@ export async function createUserAction(
     isSuperAdmin: formData.get('isSuperAdmin'),
     canAccessDocumentCentre: formData.get('canAccessDocumentCentre'),
     canAccessBusinessCards: formData.get('canAccessBusinessCards'),
+    canSeePersonalTasks: formData.get('canSeePersonalTasks'),
   });
   if (!parsed.success) {
     const fieldErrors: Record<string, string> = {};
@@ -325,6 +330,7 @@ export async function createUserAction(
           isSuperAdmin: parsed.data.isSuperAdmin ?? false,
           canAccessDocumentCentre: parsed.data.canAccessDocumentCentre ?? false,
           canAccessBusinessCards: parsed.data.canAccessBusinessCards ?? false,
+          canSeePersonalTasks: parsed.data.canSeePersonalTasks ?? false,
           forcePasswordChange: parsed.data.forcePasswordChange ?? true,
           createdById: guard.userId,
         },
@@ -350,6 +356,7 @@ export async function createUserAction(
       isSuperAdmin: created.isSuperAdmin,
       canAccessDocumentCentre: created.canAccessDocumentCentre,
       canAccessBusinessCards: created.canAccessBusinessCards,
+      canSeePersonalTasks: created.canSeePersonalTasks,
     });
 
     revalidateAll();
@@ -391,6 +398,10 @@ const updateUserSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'on'),
+  canSeePersonalTasks: z
+    .string()
+    .optional()
+    .transform((v) => v === 'on'),
   // phone + work activities are self-service on /profile — the admin form
   // never collects them, so they are intentionally absent here (and must
   // never be written from this action, which would wipe self-set values).
@@ -419,6 +430,7 @@ export async function updateUserAction(
     isSuperAdmin: formData.get('isSuperAdmin'),
     canAccessDocumentCentre: formData.get('canAccessDocumentCentre'),
     canAccessBusinessCards: formData.get('canAccessBusinessCards'),
+    canSeePersonalTasks: formData.get('canSeePersonalTasks'),
   });
   if (!parsed.success) {
     const fieldErrors: Record<string, string> = {};
@@ -444,6 +456,7 @@ export async function updateUserAction(
       isSuperAdmin: true,
       canAccessDocumentCentre: true,
       canAccessBusinessCards: true,
+      canSeePersonalTasks: true,
     },
   });
   if (!before) return fail('User not found.', epoch);
@@ -523,6 +536,7 @@ export async function updateUserAction(
           isSuperAdmin: parsed.data.isSuperAdmin,
           canAccessDocumentCentre: parsed.data.canAccessDocumentCentre,
           canAccessBusinessCards: parsed.data.canAccessBusinessCards,
+          canSeePersonalTasks: parsed.data.canSeePersonalTasks,
         },
       });
       if (extraToRemove.length > 0) {
@@ -557,6 +571,7 @@ export async function updateUserAction(
       isSuperAdmin: updated.isSuperAdmin,
       canAccessDocumentCentre: updated.canAccessDocumentCentre,
       canAccessBusinessCards: updated.canAccessBusinessCards,
+      canSeePersonalTasks: updated.canSeePersonalTasks,
     });
 
     // Granting or revoking Super Admin is security-sensitive — leave a
@@ -591,6 +606,19 @@ export async function updateUserAction(
         updated.id,
         { canAccessBusinessCards: before.canAccessBusinessCards },
         { canAccessBusinessCards: updated.canAccessBusinessCards },
+      );
+    }
+
+    // Personal task visibility decides whether this user can read colleagues'
+    // private tasks, so it gets its own entry rather than hiding inside the
+    // generic user_update diff.
+    if (before.canSeePersonalTasks !== updated.canSeePersonalTasks) {
+      await audit(
+        guard.userId,
+        'role_change',
+        updated.id,
+        { canSeePersonalTasks: before.canSeePersonalTasks },
+        { canSeePersonalTasks: updated.canSeePersonalTasks },
       );
     }
 

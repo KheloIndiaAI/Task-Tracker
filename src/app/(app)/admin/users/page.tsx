@@ -127,6 +127,7 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
     isSuperAdmin: u.isSuperAdmin,
     canAccessDocumentCentre: u.canAccessDocumentCentre,
     canAccessBusinessCards: u.canAccessBusinessCards,
+    canSeePersonalTasks: u.canSeePersonalTasks,
     lastLogin: u.lastLogin,
   }));
 

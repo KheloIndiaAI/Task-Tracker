@@ -45,20 +45,16 @@ export type VisibilityOptions = {
    * side of their PMU-team admin scope. Empty/omitted for everyone else.
    */
   pmuTeamLeaderMemberIds?: string[];
+  /**
+   * The caller's `users.can_see_personal_tasks` grant — Super-Admin-managed,
+   * shown as "Personal task visibility" on Users > Create / Edit. When set, the
+   * caller reads other people's PERSONAL tasks in every division they are a
+   * member of or head. Super Admin and OSD read them by role and never consult
+   * this. Resolved by id in `buildVisibilityClauses`, so no read surface has to
+   * add it to its own `me` select.
+   */
+  canSeePersonalTasks?: boolean;
 };
-
-/**
- * Slots that read their division's PERSONAL tasks as well as its division
- * tasks. Deliberately a short list: leadership accountable for a division's
- * work, not the whole officer chain. Section Officer, ASO, PMU members and
- * Consultants are NOT here and see personal tasks only when they own them,
- * created them, or are a collaborator.
- *
- * Deputy Secretary, JS and HMYAS are intentionally absent — leadership
- * personal-task access was specified as Super Admin, OSD, Director, Under
- * Secretary and division heads (2026-09-07). Add them here if that widens.
- */
-const LEADERSHIP_PERSONAL_SLOTS = new Set(['director', 'under_secretary']);
 
 /**
  * Build the OR-of-visibility-clauses for a caller from an injected list
@@ -69,15 +65,20 @@ const LEADERSHIP_PERSONAL_SLOTS = new Set(['director', 'under_secretary']);
  * collaborator (the three base clauses below) — and, since 2026-09-07, to
  * leadership over the division the task belongs to:
  *
- *   - Super Admin and OSD — every personal task, ministry-wide.
- *   - A division's head (direct or active delegate) — that division's.
- *   - Directors and Under Secretaries — their member divisions' (home +
- *     admin-granted extras).
+ *   - Super Admin and OSD — every personal task, ministry-wide, by role.
+ *   - Any user carrying the `can_see_personal_tasks` grant — the personal tasks
+ *     of every division they are a member of or head. Super Admin sets it per
+ *     user ("Personal task visibility" on Users > Create / Edit); it is seeded
+ *     on for Directors, Deputy Secretaries, Under Secretaries and sitting
+ *     division heads.
  *
- * Everyone else — Section Officer, ASO, PMU members, Consultants — still sees
- * no one else's personal tasks. "Personal" now means "off the division board
- * and out of ministry-wide aggregates", not "invisible to my chain"; the tasks
- * list says so in as many words.
+ * Everyone else sees no one else's personal tasks. PMU members are excluded
+ * structurally — that branch returns before this grant is considered, so PMU
+ * isolation holds even if the flag is set.
+ *
+ * "Personal" now means "off the division board and out of ministry-wide
+ * aggregates", not "invisible to my chain"; the tasks list says so in as many
+ * words.
  */
 export function buildVisibilityClausesFrom(
   me: CallerSummary,
@@ -174,16 +175,16 @@ export function buildVisibilityClausesFrom(
   divisionIds.add(me.divisionId);
   clauses.push({ visibility: 'division', divisionId: { in: [...divisionIds] } });
 
-  // Leadership additionally reads the PERSONAL tasks of the divisions they are
-  // accountable for. Headship always carries it (whatever the head's slot);
-  // a Director or Under Secretary gets it across their member divisions. Any
-  // other slot lands here with an empty set and is unaffected.
-  const personalDivisionIds = new Set(headedDivisionIds);
-  if (LEADERSHIP_PERSONAL_SLOTS.has(me.hierarchySlot)) {
+  // With the Super-Admin-managed grant, this user also reads the PERSONAL tasks
+  // of every division they belong to or head. Without it they read none but
+  // their own — the toggle is the whole switch, so turning it off actually
+  // takes the access away rather than leaving a slot-shaped hole.
+  if (opts.canSeePersonalTasks) {
+    const personalDivisionIds = new Set(headedDivisionIds);
     for (const d of memberDivisionIds) personalDivisionIds.add(d);
-  }
-  if (personalDivisionIds.size > 0) {
-    clauses.push({ visibility: 'personal', divisionId: { in: [...personalDivisionIds] } });
+    if (personalDivisionIds.size > 0) {
+      clauses.push({ visibility: 'personal', divisionId: { in: [...personalDivisionIds] } });
+    }
   }
   return clauses;
 }

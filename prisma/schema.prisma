@@ -220,6 +220,11 @@ model User {
   // Super-Admin-managed grant of access to the Business Cards module.
   // Access = is_super_admin OR this flag (see canAccessBusinessCards).
   canAccessBusinessCards  Boolean @default(false) @map("can_access_business_cards")
+  // Super-Admin-managed grant to read OTHER people's PERSONAL tasks across the
+  // divisions this user belongs to or heads. Super Admin and OSD read them
+  // regardless of this flag; for everyone else it is the single switch.
+  // See buildVisibilityClausesFrom in src/lib/visibility-rules.ts.
+  canSeePersonalTasks     Boolean @default(false) @map("can_see_personal_tasks")
   // Opt-out toggle for WhatsApp notifications (default on; user-editable on /profile).
   whatsappOptIn       Boolean   @default(true) @map("whatsapp_opt_in")
   forcePasswordChange Boolean   @default(false) @map("force_password_change")

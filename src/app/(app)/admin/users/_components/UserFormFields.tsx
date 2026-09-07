@@ -47,6 +47,7 @@ export type UserFormDefaults = {
   isSuperAdmin?: boolean;
   canAccessDocumentCentre?: boolean;
   canAccessBusinessCards?: boolean;
+  canSeePersonalTasks?: boolean;
 };
 
 type UserFormFieldsProps = {
@@ -257,6 +258,23 @@ export function UserFormFields({
             name="canAccessBusinessCards"
             defaultChecked={defaults?.canAccessBusinessCards}
             ariaLabel="Grant Business Cards access"
+          />
+        </label>
+        <label className="mt-2 flex items-start justify-between gap-3 px-3 py-2.5 rounded-lg border border-line">
+          <span className="min-w-0">
+            <span className="inline-flex items-center gap-2 text-[12px] text-ink">
+              <i className="ti ti-eye text-[14px] text-primary" aria-hidden="true" />
+              Personal task visibility
+            </span>
+            <span className="mt-0.5 block text-[11px] text-ink-3">
+              Lets this user read other people&rsquo;s personal tasks in their own
+              divisions. Super Admin and OSD always can.
+            </span>
+          </span>
+          <Switch
+            name="canSeePersonalTasks"
+            defaultChecked={defaults?.canSeePersonalTasks}
+            ariaLabel="Grant personal task visibility"
           />
         </label>
       </Section>

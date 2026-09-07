@@ -112,7 +112,7 @@ export async function getPmuParentDivisionHeadId(pmuId: string): Promise<string 
  * Returns clauses that are then composed with the filter clause in the page.
  */
 export async function buildVisibilityClauses(me: CallerSummary): Promise<Prisma.TaskWhereInput[]> {
-  const [headedDivisionIds, memberDivisionIds, pmuMemberIds, pmuParentHeadId, pmuTeamLeaderMemberIds] = await Promise.all([
+  const [headedDivisionIds, memberDivisionIds, pmuMemberIds, pmuParentHeadId, pmuTeamLeaderMemberIds, personalGrant] = await Promise.all([
     getHeadedDivisionIds(me.id),
     // Member divisions (home + admin-granted extras). Resolved by id here so
     // every task-read caller (list, counts, stats, search, calendar, priority
@@ -127,11 +127,19 @@ export async function buildVisibilityClauses(me: CallerSummary): Promise<Prisma.
     // (empty for everyone else). Resolved here so every task-read surface picks
     // it up uniformly.
     me.isPmu ? getPmuTeamMemberIds(me.id) : Promise.resolve<string[]>([]),
+    // The Super-Admin-managed "Personal task visibility" grant. Resolved here,
+    // by id, so every task-read surface picks it up without adding the column
+    // to its own `me` select — same approach as memberDivisionIds above.
+    prisma.user.findUnique({
+      where: { id: me.id },
+      select: { canSeePersonalTasks: true },
+    }),
   ]);
   return buildVisibilityClausesFrom(me, headedDivisionIds, pmuMemberIds, {
     isPmuParentDivisionHead: pmuParentHeadId !== null && pmuParentHeadId === me.id,
     memberDivisionIds,
     pmuTeamLeaderMemberIds,
+    canSeePersonalTasks: personalGrant?.canSeePersonalTasks ?? false,
   });
 }
 
