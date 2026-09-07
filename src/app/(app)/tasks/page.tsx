@@ -8,6 +8,7 @@ import { prisma } from '@/lib/db';
 import { formatDue, initialsOf } from '@/lib/format';
 import { canManageTask, canSetJsPriorityLane, getHeadedDivisionIds } from '@/lib/rbac';
 import { getPmuTeamMemberIds } from '@/lib/pmu-team';
+import { resolveGroupByDivision } from '@/lib/task-grouping-shared';
 import { fetchTaskCounts, fetchVisibleTasks, getPmuParentDivisionHeadId, type TaskFilter, type TaskSort } from '@/lib/visibility';
 
 import { DivisionControls } from './_components/DivisionControls';
@@ -39,7 +40,11 @@ export default async function TasksPage({ searchParams }: PageProps) {
     : 'all';
 
   const divisionFilter = searchParams?.division ?? '';
-  const requestedGroupByDivision = searchParams?.group === 'division';
+  // Tri-state, because a Super Admin opens this page grouped by default and
+  // still has to be able to turn it off: 'division' forces grouping on, 'none'
+  // forces it off, and an absent param falls through to the per-role default
+  // resolved below (once `me` is known).
+  const groupParam = searchParams?.group;
   // Default sort is "Recently modified" (latest) when the user has not chosen
   // one — the list opens most-recently-active first across the platform, and
   // only changes when the user picks another sort. The smart order is still
@@ -75,7 +80,14 @@ export default async function TasksPage({ searchParams }: PageProps) {
     me.hierarchySlot === 'osd' ||
     me.hierarchySlot === 'js' ||
     memberDivisionIds.length > 1;
-  const groupByDivision = canGroupByDivision && requestedGroupByDivision;
+
+  // A Super Admin's whole remit is cross-division, so the list opens grouped
+  // for them rather than as one flat ministry-wide pile. Everyone else keeps
+  // the flat default. An explicit ?group= always wins — see
+  // resolveGroupByDivision, which the toggle shares.
+  const defaultGroupByDivision = me.isSuperAdmin;
+  const groupByDivision =
+    canGroupByDivision && resolveGroupByDivision(groupParam, defaultGroupByDivision);
 
   const [taskResult, counts, divisions, pmuParentHeadId, headedDivisionIds, pmuTeamMemberIds] = await Promise.all([
     fetchVisibleTasks({ callerId: me.id, filter, divisionId: divisionFilter || undefined, sort }),
@@ -152,7 +164,11 @@ export default async function TasksPage({ searchParams }: PageProps) {
 
           <FilterChips active={filter} />
           <Suspense fallback={null}>
-            <DivisionControls divisions={divisions} canGroupByDivision={canGroupByDivision} />
+            <DivisionControls
+              divisions={divisions}
+              canGroupByDivision={canGroupByDivision}
+              defaultGroupByDivision={defaultGroupByDivision}
+            />
           </Suspense>
           <StatsStrip counts={counts} />
         </div>

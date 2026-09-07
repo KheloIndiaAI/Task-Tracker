@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
+import { groupParamFor, resolveGroupByDivision } from '@/lib/task-grouping-shared';
 import { cn } from '@/lib/utils';
 
 type Division = {
@@ -14,6 +15,12 @@ type DivisionControlsProps = {
   divisions: Division[];
   /** Group-by-division is a cross-division (leadership) view; hidden otherwise. */
   canGroupByDivision: boolean;
+  /**
+   * What an absent `?group=` means for this caller — true for a Super Admin,
+   * who opens the list grouped. Must match the server's `defaultGroupByDivision`
+   * in tasks/page.tsx, or the button would light up out of step with the list.
+   */
+  defaultGroupByDivision: boolean;
 };
 
 /**
@@ -28,11 +35,17 @@ const SORT_OPTIONS: { value: '' | 'default' | 'alpha'; label: string; hint: stri
   { value: 'alpha', label: 'A–Z', hint: 'Alphabetical by task name' },
 ];
 
-export function DivisionControls({ divisions, canGroupByDivision }: DivisionControlsProps) {
+export function DivisionControls({
+  divisions,
+  canGroupByDivision,
+  defaultGroupByDivision,
+}: DivisionControlsProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const activeDivision = searchParams.get('division') ?? '';
-  const groupBy = searchParams.get('group') === 'division';
+  // Same rule the server page uses, so the button never lights up out of step
+  // with the list it controls.
+  const groupBy = resolveGroupByDivision(searchParams.get('group'), defaultGroupByDivision);
   const activeSort = (searchParams.get('sort') ?? '') as '' | 'default' | 'alpha';
   const sortActive = activeSort !== '';
   const activeSortLabel = SORT_OPTIONS.find((o) => o.value === activeSort)?.label;
@@ -91,7 +104,10 @@ export function DivisionControls({ divisions, canGroupByDivision }: DivisionCont
   };
 
   const onToggleGroup = () => {
-    router.push(buildHref({ group: groupBy ? '' : 'division' }), { scroll: false });
+    router.push(
+      buildHref({ group: groupParamFor(!groupBy, defaultGroupByDivision) }),
+      { scroll: false },
+    );
   };
 
   const onSelectSort = (sort: '' | 'default' | 'alpha') => {
