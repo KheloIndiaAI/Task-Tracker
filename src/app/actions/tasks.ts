@@ -15,6 +15,7 @@ import {
   canAssignTaskTo,
   canCreateDivisionTask,
   canManageTask,
+  canSetJsPriorityLane,
   canTransferTaskTo,
   getHeadedDivisionIds,
   getMemberDivisionIds,
@@ -1877,9 +1878,10 @@ const setJsLaneSchema = z.object({
 /**
  * Set / unset a task's JS Priority lane.
  *
- * Permitted: OSD or Super Admin only (per PRD §5.3 "Drag-and-drop … OSD only").
- * Records a `js_priority_changed` activity event + (Phase 2) notifications
- * to the task owner, their Director, and Section Officer.
+ * Permitted: Super Admin and OSD anywhere; a division's head (direct or active
+ * delegate) and its Directors over that division's own tasks — see
+ * `canSetJsPriorityLane`. Records a `js_priority_changed` activity event +
+ * notifications to the task owner, their Director, and Section Officer.
  */
 export async function setJsPriorityLaneAction(
   prev: ActionState | undefined,
@@ -1888,16 +1890,6 @@ export async function setJsPriorityLaneAction(
   const epoch = bump(prev);
   const me = await requireSession();
   if (!me) return fail('You are signed out.', epoch);
-
-  // Authorisation: OSD or Super Admin.
-  const meRow = await prisma.user.findUnique({
-    where: { id: me.id },
-    select: { hierarchySlot: true, isSuperAdmin: true },
-  });
-  if (!meRow) return fail('Account not found.', epoch);
-  if (!(meRow.isSuperAdmin || meRow.hierarchySlot === 'osd')) {
-    return fail('Only OSD can change JS Priority.', epoch);
-  }
 
   const parsed = setJsLaneSchema.safeParse({
     taskId: formData.get('taskId'),
@@ -1910,12 +1902,39 @@ export async function setJsPriorityLaneAction(
     select: {
       id: true,
       name: true,
+      divisionId: true,
       jsPriorityLane: true,
       ownerId: true,
       owner: { select: { supervisorId: true, divisionId: true } },
     },
   });
   if (!task) return fail('Task not found.', epoch);
+
+  // Authorisation is scoped to the TASK's division, so a Director or head can
+  // only bucket their own division's work.
+  const [meRow, headedDivisionIds, memberDivisionIds] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: me.id },
+      select: { hierarchySlot: true, isSuperAdmin: true },
+    }),
+    getHeadedDivisionIds(me.id),
+    getMemberDivisionIds(me.id),
+  ]);
+  if (!meRow) return fail('Account not found.', epoch);
+  if (
+    !canSetJsPriorityLane(
+      {
+        isSuperAdmin: meRow.isSuperAdmin,
+        hierarchySlot: meRow.hierarchySlot,
+        memberDivisionIds,
+        headedDivisionIds,
+      },
+      { divisionId: task.divisionId },
+    )
+  ) {
+    return fail('You cannot change JS Priority for this task.', epoch);
+  }
+
   if (task.jsPriorityLane === parsed.data.lane) return ok(epoch);
 
   try {
@@ -1973,6 +1992,9 @@ export async function setJsPriorityLaneAction(
   }
 
   revalidatePath('/priority-board');
+  // The grouped tasks list renders the same lane as its Daily/Weekly/Monthly
+  // columns, so it has to refresh alongside the board.
+  revalidatePath('/tasks');
   revalidateTask(task.id);
   return ok(epoch);
 }

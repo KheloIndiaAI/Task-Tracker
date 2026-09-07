@@ -1,5 +1,4 @@
 import { Suspense } from 'react';
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { PullToRefresh } from '@/components/ui';
@@ -7,12 +6,12 @@ import { auth } from '@/lib/auth';
 import { isMediaAndIt } from '@/lib/divisions';
 import { prisma } from '@/lib/db';
 import { formatDue, initialsOf } from '@/lib/format';
-import { canManageTask, getHeadedDivisionIds } from '@/lib/rbac';
+import { canManageTask, canSetJsPriorityLane, getHeadedDivisionIds } from '@/lib/rbac';
 import { getPmuTeamMemberIds } from '@/lib/pmu-team';
-import { cn } from '@/lib/utils';
 import { fetchTaskCounts, fetchVisibleTasks, getPmuParentDivisionHeadId, type TaskFilter, type TaskSort } from '@/lib/visibility';
 
 import { DivisionControls } from './_components/DivisionControls';
+import { DivisionLaneBoard, type LaneBoardTask } from './_components/DivisionLaneBoard';
 import { FilterChips } from './_components/FilterChips';
 import { StatsStrip } from './_components/StatsStrip';
 import { TaskListItem } from './_components/TaskListItem';
@@ -183,7 +182,12 @@ export default async function TasksPage({ searchParams }: PageProps) {
                       count={group.tasks.length}
                       unit="task"
                     >
-                      <DivisionTaskNameList tasks={group.tasks} />
+                      <DivisionLaneBoard
+                        tasks={toLaneBoardTasks(group.tasks)}
+                        canCurate={canSetJsPriorityLane(permCaller, {
+                          divisionId: group.divisionId,
+                        })}
+                      />
                       <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 md:gap-3">
                         {group.tasks.map((t) => (
                           <TaskRow key={t.id} task={t} caller={permCaller} canWatchlist={canWatchlist} />
@@ -310,48 +314,21 @@ function TaskRow({
 }
 
 /**
- * Compact name-only list of every task in a division, above its card grid.
- * The cards below are the detailed view; a division with dozens of tasks
- * (Office of JS, Khelo India, …) is faster to scan as a dense list of names
- * than as a wall of cards, so this adds that view rather than replacing the
- * cards. Same responsive column count as the card grid so it fills the same
- * width. Each row links straight to the task. The leading number is a plain
- * per-division serial (1, 2, 3, …), not the task's ref number.
+ * Shape the division's tasks for the Daily/Weekly/Monthly columns. The lane is
+ * the task's JS Priority lane; 'watchlist' collapses to null because that view
+ * has no watchlist column (the priority board keeps its own). A task is drawn
+ * in the urgent tone when it is overdue or flagged urgent.
  */
-function DivisionTaskNameList({ tasks }: { tasks: VisibleTask[] }) {
-  return (
-    <div className="mb-4 pb-3 border-b border-line-2">
-      <h4 className="section-label mb-1.5">Task list</h4>
-      <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-4">
-        {tasks.map((t, i) => {
-          const due = formatDue(t.dueDate);
-          const isCompleted = t.status === 'completed';
-          return (
-            <li key={t.id} className="min-w-0">
-              <Link
-                href={`/tasks/${t.id}`}
-                className="group flex items-baseline gap-2 px-2 py-1.5 rounded-md hover:bg-bg transition-colors"
-              >
-                <span className="font-mono text-[10px] text-ink-3 tracking-wide tabular-nums shrink-0">
-                  {i + 1}.
-                </span>
-                <span
-                  className={cn(
-                    'min-w-0 truncate text-[13px] leading-snug transition-colors group-hover:text-primary',
-                    isCompleted && 'text-ink-3 line-through decoration-ink-4',
-                    !isCompleted && due.tone === 'overdue' && 'text-urgent font-medium',
-                    !isCompleted && due.tone !== 'overdue' && 'text-ink',
-                  )}
-                >
-                  {t.name}
-                </span>
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
+function toLaneBoardTasks(tasks: VisibleTask[]): LaneBoardTask[] {
+  return tasks.map((t) => {
+    const lane = t.jsPriorityLane;
+    return {
+      id: t.id,
+      name: t.name,
+      lane: lane === 'today' || lane === 'week' || lane === 'month' ? lane : null,
+      needsAttention: formatDue(t.dueDate).tone === 'overdue' || t.priority === 'urgent',
+    };
+  });
 }
 
 /**

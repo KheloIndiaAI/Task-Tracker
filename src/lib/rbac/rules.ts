@@ -159,6 +159,39 @@ export function canCreateDivisionTask(actor: RbacActor, divisionId: string): boo
 }
 
 /**
+ * Who may set a task's JS Priority lane — the Daily / Weekly / Monthly pills on
+ * the grouped tasks list, and the Priority Board's drag-and-drop.
+ *
+ * Super Admin and OSD curate across the ministry. A division's head (direct or
+ * active delegate) and its Directors curate that division's OWN tasks, so a
+ * division can bucket its own work without routing every change through OSD.
+ * Everyone else is read-only: they see which lane a task sits in, but get no
+ * interactive pill.
+ *
+ * Scoping deliberately mirrors `canManageTask` — the same people who can
+ * already manage a division's tasks can now also bucket them. Note this widens
+ * the board beyond the "OSD-curated" wording in CLAUDE.md / PERMISSIONS.md §5.3;
+ * those docs need updating to match.
+ */
+export function canSetJsPriorityLane(
+  caller: {
+    isSuperAdmin: boolean;
+    hierarchySlot: string;
+    /** Home + admin-granted divisions — scopes a Director to their own. */
+    memberDivisionIds: string[];
+    headedDivisionIds: string[];
+  },
+  task: { divisionId: string },
+): boolean {
+  if (caller.isSuperAdmin) return true;
+  if (caller.hierarchySlot === 'osd') return true;
+  if (caller.hierarchySlot === 'director' && caller.memberDivisionIds.includes(task.divisionId)) {
+    return true;
+  }
+  return caller.headedDivisionIds.includes(task.divisionId);
+}
+
+/**
  * Who may MANAGE a task — edit its status / priority / description / subtasks
  * and add or remove its collaborators. The rule is the single source of truth
  * behind the server `canEditTask` guard (see src/app/actions/tasks.ts) and the
