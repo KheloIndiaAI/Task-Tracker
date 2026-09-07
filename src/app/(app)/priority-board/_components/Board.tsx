@@ -5,16 +5,15 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Sortable from 'sortablejs';
 
-import { Avatar, Pill } from '@/components/ui';
+import { Avatar } from '@/components/ui';
 import { setJsPriorityLaneAction, reorderBoardAction } from '@/app/actions/tasks';
 import { formatDue } from '@/lib/format';
-import { TASK_STATUS_LABEL } from '@/lib/labels';
 import { cn } from '@/lib/utils';
 
 import { useRemoveMode } from './RemoveMode';
 import { useAccordion } from './AccordionState';
 
-import type { PillJsLane, PillStatusTone } from '@/components/ui/Pill';
+import type { PillJsLane } from '@/components/ui/Pill';
 
 /**
  * JS Priority Board — per PRD §5.3.
@@ -770,12 +769,13 @@ function Lane({
                 {canCurate ? 'Drop tasks here' : 'Empty'}
               </li>
             ) : (
-              tasks.map((t) => (
+              tasks.map((t, i) => (
                 // data-task-id on the <li> — it is the Sortable draggable item,
                 // so evt.item.dataset.taskId resolves in the drag handler.
                 <li key={t.id} data-task-id={t.id}>
                   <LaneCard
                     task={t}
+                    index={i + 1}
                     canCurate={canCurate}
                     removeMode={removeMode}
                     onRemove={onRemove}
@@ -791,30 +791,34 @@ function Lane({
 }
 
 // ------------------------------------------------------------
-// LaneCard — dense draggable list row for the board (was a padded
-// card; a lane with a dozen tasks made the whole board unreadably
-// tall). Keeps every piece of information and every interaction the
-// card had — drag handle, priority dot, ref number, status, due
-// date, owner avatar, remove-mode button, click-through to the task
-// — just laid out as a two-line row instead of a boxed card.
+// LaneCard — single-line draggable list row: a per-lane serial
+// number and the task name, division on the right. Deliberately
+// stripped of ref number, status pill, and owner avatar — this
+// board is for scanning names fast and re-ordering by drag, not
+// task detail (that's the task's own page, one tap away). Red marks
+// anything overdue or flagged urgent so the one signal that matters
+// most here still comes through, without a separate dot or badge.
 // ------------------------------------------------------------
 
 function LaneCard({
   task,
+  index,
   canCurate,
   removeMode,
   onRemove,
 }: {
   task: BoardTask;
+  index: number;
   canCurate: boolean;
   removeMode: boolean;
   onRemove: (taskId: string) => void;
 }) {
   const due = formatDue(task.due);
+  const needsAttention = due.tone === 'overdue' || task.priority === 'urgent';
   return (
     <div
       className={cn(
-        'relative flex flex-col gap-1 border-l-2 border-accent border-b border-line-2 py-1.5 pl-2.5 pr-2 transition-colors hover:bg-panel/70',
+        'relative flex items-baseline gap-2 border-b border-line-2 py-1.5 pl-2.5 pr-2 transition-colors hover:bg-panel/70',
         canCurate ? 'cursor-grab active:cursor-grabbing' : 'cursor-default',
         removeMode && 'pr-8',
       )}
@@ -835,68 +839,23 @@ function LaneCard({
         </button>
       ) : null}
 
-      {/* Line 1 — drag handle, priority, ref number, name, division (right) */}
-      <div className="flex items-center gap-1.5">
-        {canCurate ? (
-          <i
-            className="ti ti-grip-vertical text-[13px] text-ink-3 shrink-0 print:hidden"
-            aria-hidden="true"
-          />
-        ) : null}
+      <span className="font-mono text-[10px] text-ink-3 tabular-nums shrink-0">{index}.</span>
+      <Link
+        href={`/tasks/${task.id}`}
+        className="group flex-1 min-w-0 flex items-baseline justify-between gap-2"
+      >
         <span
           className={cn(
-            'w-2 h-2 rounded-full shrink-0',
-            task.priority === 'urgent' && 'bg-urgent',
-            task.priority === 'high' && 'bg-high',
-            task.priority === 'medium' && 'bg-medium',
-            task.priority === 'low' && 'bg-low',
+            'truncate text-[13px] font-medium leading-snug group-hover:underline',
+            needsAttention ? 'text-urgent' : 'text-ink',
           )}
-          aria-label={`${task.priority} priority`}
-        />
-        {task.refNumber ? (
-          <span className="font-mono text-[9.5px] text-ink-3 tracking-wide shrink-0">
-            {task.refNumber}
-          </span>
-        ) : null}
-        <Link
-          href={`/tasks/${task.id}`}
-          className="group flex-1 min-w-0 flex items-baseline justify-between gap-2"
         >
-          <span className="truncate text-[13px] font-medium text-ink leading-snug group-hover:underline">
-            {task.name}
-          </span>
-          <span className="shrink-0 max-w-[45%] truncate text-[10.5px] text-ink-3">
-            {task.divisionName}
-          </span>
-        </Link>
-      </div>
-
-      {/* Line 2 — status, due date, owner */}
-      <div className="flex items-center justify-between gap-2">
-        <Pill
-          variant="status"
-          tone={task.status as PillStatusTone}
-          label={TASK_STATUS_LABEL[task.status] ?? task.status}
-        />
-        <div className="flex items-center gap-2 text-[10px] text-ink-3 shrink-0">
-          {due.tone !== 'none' ? (
-            <span
-              className={cn(
-                due.tone === 'overdue' && 'text-urgent font-medium',
-                due.tone === 'today' && 'text-accent font-medium',
-              )}
-            >
-              {due.label}
-            </span>
-          ) : null}
-          <Avatar
-            initials={task.owner.initials}
-            colour={task.owner.colour}
-            size="xs"
-            ariaLabel={`Owner ${task.owner.name}`}
-          />
-        </div>
-      </div>
+          {task.name}
+        </span>
+        <span className="shrink-0 max-w-[40%] truncate text-[10.5px] text-ink-3">
+          {task.divisionName}
+        </span>
+      </Link>
     </div>
   );
 }
