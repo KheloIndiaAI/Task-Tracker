@@ -336,8 +336,9 @@ function toLaneBoardTasks(tasks: VisibleTask[]): LaneBoardTask[] {
  *   1. Tasks assigned to me — division tasks I currently own (includes any
  *                             task transferred or handed to me)
  *   2. Personal tasks — personal-visibility tasks I own, created, or am a
- *                             collaborator on (visible to me and added
- *                             collaborators only)
+ *                             collaborator on (kept off the division board;
+ *                             also readable by leadership over my division —
+ *                             see buildVisibilityClausesFrom)
  *   3. Other tasks of my division — the rest of the division's tasks (or,
  *                             for a PMU member, the rest of their PMU team's)
  * Personal tasks sit above the division's other tasks so a user's own
@@ -393,7 +394,7 @@ function segmentTasksByRelation(
     {
       key: 'personal',
       label: 'Personal tasks',
-      subtitle: 'Visible to me and added collaborators only',
+      subtitle: 'Visible to me, collaborators and leadership',
       emptyLabel: 'You have not created any personal tasks.',
       icon: 'ti-lock',
       tasks: personal,

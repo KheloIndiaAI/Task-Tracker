@@ -48,15 +48,36 @@ export type VisibilityOptions = {
 };
 
 /**
+ * Slots that read their division's PERSONAL tasks as well as its division
+ * tasks. Deliberately a short list: leadership accountable for a division's
+ * work, not the whole officer chain. Section Officer, ASO, PMU members and
+ * Consultants are NOT here and see personal tasks only when they own them,
+ * created them, or are a collaborator.
+ *
+ * Deputy Secretary, JS and HMYAS are intentionally absent — leadership
+ * personal-task access was specified as Super Admin, OSD, Director, Under
+ * Secretary and division heads (2026-09-07). Add them here if that widens.
+ */
+const LEADERSHIP_PERSONAL_SLOTS = new Set(['director', 'under_secretary']);
+
+/**
  * Build the OR-of-visibility-clauses for a caller from an injected list
  * of divisions they head (direct headships + active delegations) and, for
  * PMU members, the ids of everyone in their PMU (themselves + teammates).
  *
- * Personal-visibility tasks never match any role clause — only the three
- * base clauses at the top (owner, collaborator, creator). A Personal task
- * is therefore visible to exactly: the assigned owner, users explicitly
- * added as collaborators, and its creator (e.g. a Division Head / Super
- * Admin who set it Personal and assigned it to someone) — and no one else.
+ * Personal tasks are visible to: their owner, their creator, anyone added as a
+ * collaborator (the three base clauses below) — and, since 2026-09-07, to
+ * leadership over the division the task belongs to:
+ *
+ *   - Super Admin and OSD — every personal task, ministry-wide.
+ *   - A division's head (direct or active delegate) — that division's.
+ *   - Directors and Under Secretaries — their member divisions' (home +
+ *     admin-granted extras).
+ *
+ * Everyone else — Section Officer, ASO, PMU members, Consultants — still sees
+ * no one else's personal tasks. "Personal" now means "off the division board
+ * and out of ministry-wide aggregates", not "invisible to my chain"; the tasks
+ * list says so in as many words.
  */
 export function buildVisibilityClausesFrom(
   me: CallerSummary,
@@ -88,8 +109,12 @@ export function buildVisibilityClausesFrom(
   }
 
   if (me.isSuperAdmin || me.hierarchySlot === 'osd') {
-    // Super Admin + OSD see all non-personal tasks across the ministry.
+    // Super Admin + OSD see every task across the ministry — division AND
+    // personal, in every division and PMU. Written as two explicit clauses
+    // rather than one catch-all so the personal grant is impossible to miss
+    // when reading this rule.
     clauses.push({ visibility: 'division' });
+    clauses.push({ visibility: 'personal' });
     return clauses;
   }
 
@@ -148,5 +173,17 @@ export function buildVisibilityClausesFrom(
   // saw an empty board on first login.
   divisionIds.add(me.divisionId);
   clauses.push({ visibility: 'division', divisionId: { in: [...divisionIds] } });
+
+  // Leadership additionally reads the PERSONAL tasks of the divisions they are
+  // accountable for. Headship always carries it (whatever the head's slot);
+  // a Director or Under Secretary gets it across their member divisions. Any
+  // other slot lands here with an empty set and is unaffected.
+  const personalDivisionIds = new Set(headedDivisionIds);
+  if (LEADERSHIP_PERSONAL_SLOTS.has(me.hierarchySlot)) {
+    for (const d of memberDivisionIds) personalDivisionIds.add(d);
+  }
+  if (personalDivisionIds.size > 0) {
+    clauses.push({ visibility: 'personal', divisionId: { in: [...personalDivisionIds] } });
+  }
   return clauses;
 }

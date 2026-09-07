@@ -37,9 +37,11 @@ export default async function CommandCentrePage() {
   const startOfToday = startOfDayIST();
   const endOfToday = endOfDayIST();
 
-  // Division-only: the Command Centre is a ministry-wide overview of
-  // division work. Personal tasks are private to their creator/owner/
-  // collaborators and must never surface in these aggregates.
+  // Division-only, deliberately. OSD and Super Admin CAN read personal tasks
+  // (see buildVisibilityClausesFrom), but these counters measure official
+  // division work — folding personal tasks in would inflate them and break
+  // comparison with previously reported figures. Kept out on purpose, not
+  // because they are unreachable.
   const baseFilter = { archivedAt: null, parentTaskId: null, visibility: 'division' as const };
 
   const [

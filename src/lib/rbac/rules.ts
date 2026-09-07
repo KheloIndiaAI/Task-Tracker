@@ -214,8 +214,9 @@ export function canSetJsPriorityLane(
  *     their PMU team (`pmuTeamMemberIds`, resolved by `getPmuTeamMemberIds`).
  *     This scopes the leader's admin to the PMU team's own board tasks — never
  *     the wider division's ministry tasks, and never a teammate's PERSONAL task
- *     (personal tasks stay private to their creator, exactly as the visibility
- *     scoper keeps them off the leader's board). Management only: never delete.
+ *     (a PMU leader gets no personal-task reach; the visibility scoper grants
+ *     that to division leadership only, never to PMU roles). Management only:
+ *     never delete.
  *
  * Pure so it can be unit-tested and shared verbatim by client and server.
  */

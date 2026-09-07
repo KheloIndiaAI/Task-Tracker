@@ -180,7 +180,7 @@ PMU isolation:
 - **PMU members see only PMU-tagged tasks in their division** — never internal ministry tasks unless explicitly added as a collaborator.
 
 Visibility flag on each task:
-- `Personal` — visible only to the creator, **not even to superiors**.
+- `Personal` — kept off the division board and out of the Command Centre's ministry-wide counters. Visible to its owner, its creator, anyone added as a collaborator, and **the leadership over its division**: Super Admin and OSD (ministry-wide), the division's head or active delegate, and Directors / Under Secretaries of that division. Section Officers, ASOs, PMU members and Consultants see none but their own. Enforced in `buildVisibilityClausesFrom` (`src/lib/visibility-rules.ts`) — the `LEADERSHIP_PERSONAL_SLOTS` set is the list. *(Changed 2026-09-07; personal was previously invisible to superiors. Deputy Secretary, JS and HMYAS were not included — revisit if that was not intended.)*
 - `Division` — follows the hierarchy rules above.
 - **Creating a `Division` task (or changing visibility either way) is a head power**: Super Admin, OSD, the division's head (`divisions.head_user_id`), or an active delegate (`division_access_delegations`). Everyone else creates `Personal` tasks only — enforced by `canCreateDivisionTask` in `src/lib/rbac/rules.ts` and gated again in `createTaskAction` / `updateTaskFieldsAction`. The same rule covers spawning tasks from a Timeline File.
 
