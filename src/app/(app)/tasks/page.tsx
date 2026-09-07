@@ -81,11 +81,12 @@ export default async function TasksPage({ searchParams }: PageProps) {
     me.hierarchySlot === 'js' ||
     memberDivisionIds.length > 1;
 
-  // A Super Admin's whole remit is cross-division, so the list opens grouped
-  // for them rather than as one flat ministry-wide pile. Everyone else keeps
-  // the flat default. An explicit ?group= always wins — see
-  // resolveGroupByDivision, which the toggle shares.
-  const defaultGroupByDivision = me.isSuperAdmin;
+  // Leadership reads across divisions, so the list opens grouped for them
+  // rather than as one flat ministry-wide pile. Everyone else keeps the flat
+  // default. An explicit ?group= always wins — see resolveGroupByDivision,
+  // which the toggle shares.
+  const defaultGroupByDivision =
+    me.isSuperAdmin || me.hierarchySlot === 'osd' || me.hierarchySlot === 'js';
   const groupByDivision =
     canGroupByDivision && resolveGroupByDivision(groupParam, defaultGroupByDivision);
 
@@ -179,9 +180,31 @@ export default async function TasksPage({ searchParams }: PageProps) {
           <div className="flex items-center justify-between mb-2">
             <h2 className="section-label">Tasks</h2>
             <span className="text-[11px] text-ink-3">
-              {capped ? `Showing ${tasks.length} of ${total}` : `${tasks.length} ${tasks.length === 1 ? 'item' : 'items'}`}
+              {capped
+                ? `Showing ${tasks.length} of ${total}`
+                : `${tasks.length} ${tasks.length === 1 ? 'item' : 'items'}`}
             </span>
           </div>
+
+          {/* A truncated list must say so loudly. Quietly dropping the tail
+              makes every per-division count below it wrong, which reads as
+              missing tasks rather than a page limit. */}
+          {capped ? (
+            <p
+              role="status"
+              className="mb-2 flex items-start gap-2 rounded-lg border border-accent-line bg-accent-soft px-3 py-2 text-[12px] text-ink"
+            >
+              <i
+                className="ti ti-alert-triangle mt-[1px] text-[14px] text-accent shrink-0"
+                aria-hidden="true"
+              />
+              <span>
+                Showing the {tasks.length} most recently active of {total} tasks. The
+                counts below cover only these — narrow by division, or use a filter or
+                search, to see the rest.
+              </span>
+            </p>
+          ) : null}
 
           {grouped ? (
             grouped.length === 0 ? (

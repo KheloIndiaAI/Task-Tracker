@@ -224,7 +224,20 @@ export type VisibleTask = Task & {
   attachments: { id: string; fileName: string }[];
 };
 
-const TASK_PAGE_LIMIT = 200;
+/**
+ * Hard ceiling on one page of the tasks list.
+ *
+ * Raised from 200 on 2026-09-07. Leadership now reads personal tasks and their
+ * divisions' PMU boards on top of the division work they already saw, which
+ * pushed a Super Admin's ministry-wide list past the old ceiling. Past it, rows
+ * are dropped by `orderBy` — so a division's group badge quietly reported the
+ * post-truncation count and looked like a visibility bug rather than a cap.
+ *
+ * Sized for this ministry (PRD: 100–200 users at maturity), not for growth
+ * without bound: when the list does exceed this, the header says so plainly
+ * instead of pretending the page is complete.
+ */
+const TASK_PAGE_LIMIT = 500;
 
 export async function fetchVisibleTasks(opts: {
   callerId: string;
