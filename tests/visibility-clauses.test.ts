@@ -270,6 +270,78 @@ describe('buildVisibilityClausesFrom — personal-task visibility grant', () => 
   });
 });
 
+describe('buildVisibilityClausesFrom — a division’s PMUs', () => {
+  const KI_PMU = 'div-ki-pmu';
+
+  it('an officer reads their division’s PMU board alongside their own', () => {
+    const clauses = buildVisibilityClausesFrom(
+      caller({ hierarchySlot: 'aso', divisionId: KI }),
+      [],
+      [],
+      { pmuDivisionIds: [KI_PMU] },
+    );
+    expect(divisionClause(clauses)?.divisionId?.in?.sort()).toEqual([KI, KI_PMU].sort());
+  });
+
+  it('a head reads the PMUs of every division they head', () => {
+    const clauses = buildVisibilityClausesFrom(
+      caller({ hierarchySlot: 'director', divisionId: ABD }),
+      [NSDF],
+      [],
+      { pmuDivisionIds: [KI_PMU] },
+    );
+    expect(divisionClause(clauses)?.divisionId?.in?.sort()).toEqual(
+      [ABD, NSDF, KI_PMU].sort(),
+    );
+  });
+
+  it('the personal grant reaches PMU members’ personal tasks', () => {
+    // The point of the change: a PMU team's private work is visible to the
+    // same division leadership as everyone else's in that division.
+    const clauses = buildVisibilityClausesFrom(
+      caller({ hierarchySlot: 'director', divisionId: KI }),
+      [],
+      [],
+      { canSeePersonalTasks: true, pmuDivisionIds: [KI_PMU] },
+    );
+    expect(personalRoleClause(clauses)?.divisionId?.in?.sort()).toEqual([KI, KI_PMU].sort());
+  });
+
+  it('without the grant, a PMU board is visible but its personal tasks are not', () => {
+    const clauses = buildVisibilityClausesFrom(
+      caller({ hierarchySlot: 'director', divisionId: KI }),
+      [],
+      [],
+      { pmuDivisionIds: [KI_PMU] },
+    );
+    expect(divisionClause(clauses)?.divisionId?.in).toContain(KI_PMU);
+    expect(personalRoleClause(clauses)).toBeUndefined();
+  });
+
+  it('a PMU member gains nothing — isolation is unaffected', () => {
+    // The PMU branch returns before the officer branch, so a stray
+    // pmuDivisionIds never hands one team another team's board.
+    const clauses = buildVisibilityClausesFrom(
+      caller({ isPmu: true, divisionId: KI }),
+      [],
+      ['me'],
+      { pmuDivisionIds: ['div-other-pmu'], canSeePersonalTasks: true },
+    );
+    expect(clauses.some((c) => 'divisionId' in c)).toBe(false);
+    expect(personalRoleClause(clauses)).toBeUndefined();
+  });
+
+  it('is inert when the caller’s divisions have no PMU', () => {
+    const clauses = buildVisibilityClausesFrom(
+      caller({ hierarchySlot: 'aso', divisionId: KI }),
+      [],
+      [],
+      { pmuDivisionIds: [] },
+    );
+    expect(divisionClause(clauses)?.divisionId?.in).toEqual([KI]);
+  });
+});
+
 describe('buildVisibilityClausesFrom — PMU team leader read access', () => {
   it("adds an owner-scoped clause for the leader's team, division-only", () => {
     const team = ['leader', 'mate-1', 'mate-2'];

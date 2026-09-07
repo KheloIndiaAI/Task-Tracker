@@ -176,7 +176,7 @@ Permissions are **hierarchy-driven**:
 - **Super Admin** has unrestricted access to any page or view; same person as OSD initially.
 
 PMU isolation:
-- **Ministry officers in a division can see their PMU's tasks** (collaboration).
+- **Ministry officers in a division can see their PMU's tasks** (collaboration) — a division's PMUs are folded into its officers' visibility by `getPmuDivisionIdsFor`, which resolves a PMU by `pmu_parent_division_id` and falls back to `parent_id`, so a PMU carrying both is reachable from either division. Their PMU members' **personal** tasks follow the same `can_see_personal_tasks` grant as anyone else's in that division. *(Implemented 2026-09-07; the read side previously lagged the create side, which had always treated a head's divisions and those divisions' PMUs as one set.)*
 - **PMU members see only PMU-tagged tasks in their division** — never internal ministry tasks unless explicitly added as a collaborator.
 
 Visibility flag on each task:

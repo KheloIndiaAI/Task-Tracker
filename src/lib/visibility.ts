@@ -93,6 +93,38 @@ export async function getPmuTeammateIds(userId: string): Promise<string[]> {
  * by `pmu_parent_division_id` (falling back to `parent_id` for legacy rows).
  * This is the "Division head" excluded from a whole-PMU-team share.
  */
+/**
+ * The PMUs attached to any of `divisionIds` — the reverse of
+ * `getPmuParentDivisionHeadId`. Empty when the caller holds no divisions.
+ *
+ * A PMU is matched on EITHER `pmu_parent_division_id` or `parent_id`, not the
+ * `??` fallback used when resolving a PMU's single "home". That is deliberate:
+ * where the two fields name different divisions, both divisions' officers see
+ * the PMU — which is how one PMU serves a pair of related divisions (KI PMU
+ * across Khelo India and Khelo India Mission). It mirrors the placement check
+ * in admin-users.ts, which likewise accepts a user whose division matches
+ * either field.
+ *
+ * Used to fold a division's PMUs into its people's visibility: the create side
+ * already treats "divisions I head plus those divisions' PMUs" as one set (see
+ * the create targets in src/app/(app)/layout.tsx), and this is the read side of
+ * the same idea.
+ */
+export async function getPmuDivisionIdsFor(divisionIds: string[]): Promise<string[]> {
+  if (divisionIds.length === 0) return [];
+  const pmus = await prisma.division.findMany({
+    where: {
+      kind: 'pmu',
+      OR: [
+        { pmuParentDivisionId: { in: divisionIds } },
+        { parentId: { in: divisionIds } },
+      ],
+    },
+    select: { id: true },
+  });
+  return pmus.map((p) => p.id);
+}
+
 export async function getPmuParentDivisionHeadId(pmuId: string): Promise<string | null> {
   const pmu = await prisma.division.findUnique({
     where: { id: pmuId },
@@ -135,11 +167,21 @@ export async function buildVisibilityClauses(me: CallerSummary): Promise<Prisma.
       select: { canSeePersonalTasks: true },
     }),
   ]);
+  // PMUs hanging off the caller's own divisions. Resolved after the sets above,
+  // since those name the divisions to look under. Skipped for Super Admin and
+  // OSD, whose clauses already span the ministry — no point paying for the
+  // lookup on every task read.
+  const pmuDivisionIds =
+    me.isSuperAdmin || me.hierarchySlot === 'osd'
+      ? []
+      : await getPmuDivisionIdsFor([...new Set([...headedDivisionIds, ...memberDivisionIds])]);
+
   return buildVisibilityClausesFrom(me, headedDivisionIds, pmuMemberIds, {
     isPmuParentDivisionHead: pmuParentHeadId !== null && pmuParentHeadId === me.id,
     memberDivisionIds,
     pmuTeamLeaderMemberIds,
     canSeePersonalTasks: personalGrant?.canSeePersonalTasks ?? false,
+    pmuDivisionIds,
   });
 }
 

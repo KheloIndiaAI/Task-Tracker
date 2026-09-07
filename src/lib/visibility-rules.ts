@@ -54,6 +54,18 @@ export type VisibilityOptions = {
    * add it to its own `me` select.
    */
   canSeePersonalTasks?: boolean;
+  /**
+   * PMUs attached to the caller's own divisions (resolved by
+   * `getPmuDivisionIdsFor`, which honours `pmu_parent_division_id` and falls
+   * back to `parent_id`). A ministry officer reads their divisions' PMU boards
+   * alongside their own — the read-side counterpart of the create targets in
+   * src/app/(app)/layout.tsx, which already treat a head's divisions and those
+   * divisions' PMUs as one set.
+   *
+   * Only the ministry-officer branch consumes this. PMU members return earlier
+   * and never gain a sibling team's board, so PMU isolation is unaffected.
+   */
+  pmuDivisionIds?: string[];
 };
 
 /**
@@ -173,15 +185,23 @@ export function buildVisibilityClausesFrom(
   // division they head. Without the home-division clause a fresh division user
   // saw an empty board on first login.
   divisionIds.add(me.divisionId);
+  // A division's PMUs count as part of it here: an officer of Khelo India reads
+  // the KI PMU's board too. This is the read side of a rule the create side
+  // already applies, and of PERMISSIONS.md's "ministry officers in a division
+  // can see their PMU's tasks".
+  for (const d of opts.pmuDivisionIds ?? []) divisionIds.add(d);
   clauses.push({ visibility: 'division', divisionId: { in: [...divisionIds] } });
 
   // With the Super-Admin-managed grant, this user also reads the PERSONAL tasks
-  // of every division they belong to or head. Without it they read none but
-  // their own — the toggle is the whole switch, so turning it off actually
-  // takes the access away rather than leaving a slot-shaped hole.
+  // of every division they belong to or head — their divisions' PMUs included,
+  // so a PMU member's private work is visible to the same division leadership
+  // as everyone else's. Without the grant they read none but their own: the
+  // toggle is the whole switch, so turning it off actually takes the access
+  // away rather than leaving a slot-shaped hole.
   if (opts.canSeePersonalTasks) {
     const personalDivisionIds = new Set(headedDivisionIds);
     for (const d of memberDivisionIds) personalDivisionIds.add(d);
+    for (const d of opts.pmuDivisionIds ?? []) personalDivisionIds.add(d);
     if (personalDivisionIds.size > 0) {
       clauses.push({ visibility: 'personal', divisionId: { in: [...personalDivisionIds] } });
     }
