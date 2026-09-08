@@ -32,6 +32,9 @@ export function isDocQuerySearchable(q: string): boolean {
 export async function quickSearchDocuments(
   callerId: string,
   rawQuery: string,
+  /** Rows to return. The global search bar asks for a short preview; the
+   *  Document Centre's own search takes the full page. */
+  limit: number = DOC_SEARCH_LIMIT,
 ): Promise<{ rows: DocumentSearchCard[]; total: number; capped: boolean }> {
   const q = rawQuery.trim();
   if (q.length < DOC_SEARCH_MIN_CHARS) return { rows: [], total: 0, capped: false };
@@ -78,7 +81,7 @@ export async function quickSearchDocuments(
     where,
     include: { createdBy: { select: { name: true } } },
     orderBy: [{ lastActivityAt: 'desc' }, { createdAt: 'desc' }],
-    take: DOC_SEARCH_LIMIT,
+    take: limit,
   });
 
   const ids = records.map((r) => r.id);

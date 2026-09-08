@@ -11,6 +11,7 @@ import type {
   SearchTfResult,
   SearchUserResult,
   SearchTagResult,
+  SearchDocumentResult,
 } from '@/lib/search';
 import { cn } from '@/lib/utils';
 
@@ -25,7 +26,8 @@ const EMPTY: SearchResults = {
   timelineFiles: [],
   users: [],
   tags: [],
-  totals: { tasks: 0, timelineFiles: 0, users: 0, tags: 0 },
+  documents: [],
+  totals: { tasks: 0, timelineFiles: 0, users: 0, tags: 0, documents: 0 },
 };
 
 export function SearchField() {
@@ -124,13 +126,15 @@ export function SearchField() {
     ...results.timelineFiles.map((r) => ({ ...r, kind: 'tf' as const })),
     ...results.users.map((r) => ({ ...r, kind: 'user' as const })),
     ...results.tags.map((r) => ({ ...r, kind: 'tag' as const })),
+    ...results.documents.map((r) => ({ ...r, kind: 'document' as const })),
   ];
   const totalShown = flat.length;
   const totalAll =
     results.totals.tasks +
     results.totals.timelineFiles +
     results.totals.users +
-    results.totals.tags;
+    results.totals.tags +
+    results.totals.documents;
 
   const goToResultsPage = (q?: string) => {
     const value = (q ?? query).trim();
@@ -216,7 +220,7 @@ export function SearchField() {
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
-          placeholder="Search tasks, files, people, tags…"
+          placeholder="Search tasks, files, documents, people…"
           className="w-full pl-9 pr-3 py-2 rounded-lg border border-line bg-bg text-[13px] text-ink placeholder:text-ink-3 outline-none focus:border-ink"
           aria-label="Global search"
           aria-expanded={showDropdown}
@@ -291,7 +295,7 @@ export function SearchField() {
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyDown={onKeyDown}
-                    placeholder="Search tasks, files, people…"
+                    placeholder="Search tasks, files, documents, people…"
                     className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-line bg-panel text-[14px] text-ink placeholder:text-ink-3 outline-none focus:border-ink"
                     aria-label="Search"
                     autoComplete="off"
@@ -368,6 +372,7 @@ function DropdownGroups({
   const tfCount = results.timelineFiles.length;
   const userCount = results.users.length;
   const tagCount = results.tags.length;
+  const docCount = results.documents.length;
 
   return (
     <>
@@ -428,6 +433,23 @@ function DropdownGroups({
             const idx = runningIndex++;
             return (
               <TagRow
+                key={r.id}
+                row={r}
+                active={idx === activeIndex}
+                onMouseEnter={() => onHoverIndex(idx)}
+                onSelect={() => onSelect(r.href)}
+              />
+            );
+          })}
+        </Group>
+      ) : null}
+
+      {docCount > 0 ? (
+        <Group label="Documents" count={results.totals.documents}>
+          {results.documents.map((r) => {
+            const idx = runningIndex++;
+            return (
+              <DocRow
                 key={r.id}
                 row={r}
                 active={idx === activeIndex}
@@ -571,6 +593,35 @@ function TaskRow({
         </span>
         <span className="block text-[10.5px] text-ink-3 truncate">
           {row.divisionName} · {row.ownerName} · {STATUS_LABEL[row.status] ?? row.status}
+        </span>
+      </span>
+    </RowLink>
+  );
+}
+
+function DocRow({
+  row,
+  active,
+  onMouseEnter,
+  onSelect,
+}: {
+  row: SearchDocumentResult;
+  active: boolean;
+  onMouseEnter: () => void;
+  onSelect: () => void;
+}) {
+  return (
+    <RowLink href={row.href} active={active} onMouseEnter={onMouseEnter} onSelect={onSelect}>
+      <span
+        className="w-7 h-7 grid place-items-center rounded-md bg-primary-soft text-primary shrink-0"
+        aria-hidden="true"
+      >
+        <i className="ti ti-files text-[14px]" aria-hidden="true" />
+      </span>
+      <span className="flex-1 min-w-0">
+        <span className="block text-[12.5px] font-medium text-ink truncate">{row.subject}</span>
+        <span className="block text-[10.5px] text-ink-3 truncate">
+          Document Centre · {row.createdByName}
         </span>
       </span>
     </RowLink>

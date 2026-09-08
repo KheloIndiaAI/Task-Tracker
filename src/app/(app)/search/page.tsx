@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { canAccessDocumentCentreById } from '@/lib/document-centre';
 import {
   isQuerySearchable,
   searchFull,
@@ -35,6 +36,7 @@ const TYPES: { id: SearchType; label: string }[] = [
   { id: 'timeline_files', label: 'Timeline files' },
   { id: 'users', label: 'People' },
   { id: 'tags', label: 'Tags' },
+  { id: 'documents', label: 'Documents' },
 ];
 
 const STATUS_LABEL: Record<string, string> = {
@@ -56,9 +58,16 @@ export default async function SearchPage({ searchParams }: PageProps) {
   // Tags are a Super Admin-only feature — non-admins never get the tag tab
   // or tag results (also enforced in the search library).
   const isSuperAdmin = session.user.isSuperAdmin;
+  // Document Centre records are gated the same way the module is, so the tab
+  // only exists for a caller who holds access (the search library withholds
+  // the rows regardless).
+  const canDocs = await canAccessDocumentCentreById(session.user.id);
   let type: SearchType = isType(searchParams?.type) ? searchParams!.type : 'all';
   if (type === 'tags' && !isSuperAdmin) type = 'all';
-  const visibleTypes = isSuperAdmin ? TYPES : TYPES.filter((t) => t.id !== 'tags');
+  if (type === 'documents' && !canDocs) type = 'all';
+  const visibleTypes = TYPES.filter(
+    (t) => (t.id !== 'tags' || isSuperAdmin) && (t.id !== 'documents' || canDocs),
+  );
 
   const taskFilters: SearchTaskFilters = {};
   if (searchParams?.status) taskFilters.status = searchParams.status;
@@ -80,7 +89,8 @@ export default async function SearchPage({ searchParams }: PageProps) {
           timelineFiles: [] as SearchResults['timelineFiles'],
           users: [] as SearchResults['users'],
           tags: [] as SearchResults['tags'],
-          totals: { tasks: 0, timelineFiles: 0, users: 0, tags: 0 },
+          documents: [] as SearchResults['documents'],
+          totals: { tasks: 0, timelineFiles: 0, users: 0, tags: 0, documents: 0 },
         } as SearchResults),
     showTaskFilters
       ? prisma.division.findMany({
@@ -95,7 +105,8 @@ export default async function SearchPage({ searchParams }: PageProps) {
     results.totals.tasks +
     results.totals.timelineFiles +
     results.totals.users +
-    results.totals.tags;
+    results.totals.tags +
+    results.totals.documents;
 
   return (
     <div className="max-w-5xl mx-auto px-4 md:px-6 lg:px-8 pt-4 md:pt-6 pb-12">
@@ -269,6 +280,32 @@ export default async function SearchPage({ searchParams }: PageProps) {
             </Group>
           ) : null}
 
+          {(type === 'all' || type === 'documents') && results.documents.length > 0 ? (
+            <Group
+              label="Documents"
+              total={results.totals.documents}
+              shown={results.documents.length}
+            >
+              {results.documents.map((r) => (
+                <Link
+                  key={r.id}
+                  href={r.href}
+                  className="flex items-center gap-3 p-3.5 bg-panel border border-line rounded-xl hover:border-ink-4 transition-colors"
+                >
+                  <span className="w-9 h-9 grid place-items-center rounded-md bg-primary-soft text-primary shrink-0">
+                    <i className="ti ti-files text-[16px]" aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-[13.5px] font-medium text-ink truncate">{r.subject}</p>
+                    <p className="text-[11px] text-ink-3 truncate mt-0.5">
+                      Document Centre · {r.createdByName}
+                    </p>
+                  </div>
+                </Link>
+              ))}
+            </Group>
+          ) : null}
+
           {(type === 'all' || type === 'tags') && results.tags.length > 0 ? (
             <Group label="Tags" total={results.totals.tags} shown={results.tags.length}>
               {results.tags.map((r) => (
@@ -331,7 +368,8 @@ function EmptyState({ query }: { query: string }) {
       />
       <h2 className="font-serif text-[18px] text-ink mb-1">No matches found</h2>
       <p className="text-[13px] text-ink-2 max-w-md mx-auto">
-        Nothing in tasks, timeline files, people, or tags matched &ldquo;{query}&rdquo;.
+        Nothing in tasks, timeline files, documents, people, or tags matched
+        &ldquo;{query}&rdquo;.
       </p>
     </div>
   );
@@ -343,11 +381,17 @@ function EmptyState({ query }: { query: string }) {
 
 function isType(v: string | undefined): v is SearchType {
   if (!v) return false;
-  return ['all', 'tasks', 'timeline_files', 'users', 'tags'].includes(v);
+  return ['all', 'tasks', 'timeline_files', 'users', 'tags', 'documents'].includes(v);
 }
 
 function totalForType(
-  totals: { tasks: number; timelineFiles: number; users: number; tags: number },
+  totals: {
+    tasks: number;
+    timelineFiles: number;
+    users: number;
+    tags: number;
+    documents: number;
+  },
   t: SearchType,
 ): number {
   switch (t) {
@@ -359,9 +403,13 @@ function totalForType(
       return totals.users;
     case 'tags':
       return totals.tags;
+    case 'documents':
+      return totals.documents;
     case 'all':
     default:
-      return totals.tasks + totals.timelineFiles + totals.users + totals.tags;
+      return (
+        totals.tasks + totals.timelineFiles + totals.users + totals.tags + totals.documents
+      );
   }
 }
 

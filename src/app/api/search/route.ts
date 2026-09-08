@@ -7,9 +7,10 @@ import { isQuerySearchable, searchPreview } from '@/lib/search';
 /**
  * Search preview endpoint — drives the header dropdown.
  *
- * Returns JSON with `tasks`, `timelineFiles`, `users`, `tags` (top 5 each)
- * and totals. Scoped to the caller's visibility on tasks + TFs; users + tags
- * are open to every signed-in caller.
+ * Returns JSON with `tasks`, `timelineFiles`, `users`, `tags`, `documents`
+ * (top 5 each) and totals. Scoped to the caller's visibility on tasks + TFs;
+ * documents are gated on Document Centre access and come back empty for
+ * everyone else; users + tags are open to every signed-in caller.
  *
  * No edge runtime: prisma needs the Node runtime.
  */
@@ -34,7 +35,8 @@ export async function GET(request: Request) {
       timelineFiles: [],
       users: [],
       tags: [],
-      totals: { tasks: 0, timelineFiles: 0, users: 0, tags: 0 },
+      documents: [],
+      totals: { tasks: 0, timelineFiles: 0, users: 0, tags: 0, documents: 0 },
     });
   }
 

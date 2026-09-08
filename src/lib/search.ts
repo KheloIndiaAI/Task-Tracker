@@ -1,6 +1,7 @@
 import type { Prisma, TaskPriority, TaskStatus } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
+import { quickSearchDocuments } from '@/lib/document-search';
 import { formatDue, initialsOf } from '@/lib/format';
 import { USER_SUMMARY_SELECT } from '@/lib/prisma-selects';
 import { buildTfVisibilityClause } from '@/lib/timeline-files';
@@ -72,16 +73,32 @@ export type SearchTagResult = {
   href: string;
 };
 
+export type SearchDocumentResult = {
+  id: string;
+  subject: string;
+  status: string;
+  urgency: string;
+  createdByName: string;
+  href: string;
+};
+
 export type SearchResults = {
   query: string;
   tasks: SearchTaskResult[];
   timelineFiles: SearchTfResult[];
   users: SearchUserResult[];
   tags: SearchTagResult[];
-  totals: { tasks: number; timelineFiles: number; users: number; tags: number };
+  documents: SearchDocumentResult[];
+  totals: {
+    tasks: number;
+    timelineFiles: number;
+    users: number;
+    tags: number;
+    documents: number;
+  };
 };
 
-export type SearchType = 'all' | 'tasks' | 'timeline_files' | 'users' | 'tags';
+export type SearchType = 'all' | 'tasks' | 'timeline_files' | 'users' | 'tags' | 'documents';
 
 export type SearchTaskFilters = {
   status?: string;
@@ -386,15 +403,47 @@ export async function searchTagsFor(
 // Aggregated entry points
 // ============================================================
 
+/**
+ * Document Centre records for the global search.
+ *
+ * Delegates the matching AND the access gate to `quickSearchDocuments`, which
+ * covers subject, context, attachment file names, Drive links and discussion
+ * bodies, and returns nothing at all for a caller without Document Centre
+ * access. Keeping one implementation means the global bar can never drift into
+ * showing a record the module itself would withhold.
+ */
+export async function searchDocumentsFor(
+  callerId: string,
+  query: string,
+  limit: number,
+): Promise<{ rows: SearchDocumentResult[]; total: number }> {
+  const q = normaliseQuery(query);
+  if (!isQuerySearchable(q)) return { rows: [], total: 0 };
+
+  const { rows, total } = await quickSearchDocuments(callerId, q, limit);
+  return {
+    rows: rows.map((r) => ({
+      id: r.id,
+      subject: r.subject,
+      status: r.status,
+      urgency: r.urgency,
+      createdByName: r.createdByName,
+      href: `/document-centre/${r.id}`,
+    })),
+    total,
+  };
+}
+
 export async function searchPreview(
   callerId: string,
   query: string,
 ): Promise<SearchResults> {
-  const [tasks, timelineFiles, users, tags] = await Promise.all([
+  const [tasks, timelineFiles, users, tags, documents] = await Promise.all([
     searchTasksFor(callerId, query, PREVIEW_PER_GROUP),
     searchTimelineFilesFor(callerId, query, PREVIEW_PER_GROUP),
     searchUsersFor(query, PREVIEW_PER_GROUP),
     searchTagsFor(callerId, query, PREVIEW_PER_GROUP),
+    searchDocumentsFor(callerId, query, PREVIEW_PER_GROUP),
   ]);
   return {
     query,
@@ -402,11 +451,13 @@ export async function searchPreview(
     timelineFiles: timelineFiles.rows,
     users: users.rows,
     tags: tags.rows,
+    documents: documents.rows,
     totals: {
       tasks: tasks.total,
       timelineFiles: timelineFiles.total,
       users: users.total,
       tags: tags.total,
+      documents: documents.total,
     },
   };
 }
@@ -576,9 +627,10 @@ export async function searchFull(
     timelineFiles: type === 'all' || type === 'timeline_files',
     users: type === 'all' || type === 'users',
     tags: type === 'all' || type === 'tags',
+    documents: type === 'all' || type === 'documents',
   };
 
-  const [tasks, timelineFiles, users, tags] = await Promise.all([
+  const [tasks, timelineFiles, users, tags, documents] = await Promise.all([
     include.tasks
       ? searchTasksFor(callerId, query, FULL_PER_GROUP, taskFilters)
       : Promise.resolve({ rows: [], total: 0 }),
@@ -591,6 +643,9 @@ export async function searchFull(
     include.tags
       ? searchTagsFor(callerId, query, FULL_PER_GROUP)
       : Promise.resolve({ rows: [], total: 0 }),
+    include.documents
+      ? searchDocumentsFor(callerId, query, FULL_PER_GROUP)
+      : Promise.resolve({ rows: [], total: 0 }),
   ]);
 
   return {
@@ -599,11 +654,13 @@ export async function searchFull(
     timelineFiles: timelineFiles.rows,
     users: users.rows,
     tags: tags.rows,
+    documents: documents.rows,
     totals: {
       tasks: tasks.total,
       timelineFiles: timelineFiles.total,
       users: users.total,
       tags: tags.total,
+      documents: documents.total,
     },
   };
 }
