@@ -28,10 +28,10 @@ const LANE_META: Record<PillJsLane, { label: string; icon: string }> = {
   today: { label: 'Today', icon: 'ti-clock-hour-4' },
   week: { label: 'This week', icon: 'ti-calendar-week' },
   month: { label: 'This month', icon: 'ti-calendar-month' },
-  watchlist: { label: 'Watchlist', icon: 'ti-eye' },
+  fortnight: { label: 'Fortnight', icon: 'ti-calendar-due' },
 };
 
-const LANES: PillJsLane[] = ['today', 'week', 'month', 'watchlist'];
+const LANES: PillJsLane[] = ['today', 'week', 'month', 'fortnight'];
 
 export default async function JsDashboardPage() {
   const session = await auth();
@@ -122,7 +122,7 @@ export default async function JsDashboardPage() {
     today: [],
     week: [],
     month: [],
-    watchlist: [],
+    fortnight: [],
   };
   for (const t of allPriorityTasks) {
     if (!t.jsPriorityLane) continue;

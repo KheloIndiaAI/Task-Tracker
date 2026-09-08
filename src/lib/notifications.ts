@@ -25,7 +25,7 @@ const LANE_LABEL: Record<string, string> = {
   today: 'today',
   week: 'this week',
   month: 'this month',
-  watchlist: 'watchlist',
+  fortnight: 'fortnight',
 };
 
 const STATUS_LABEL: Record<string, string> = {

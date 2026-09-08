@@ -15,15 +15,15 @@ import type { PillJsLane, PillStatusTone } from '@/components/ui/Pill';
  * long press. Shows only the actions the caller is permitted to run — options
  * they lack permission for are hidden entirely (the server re-authorizes every
  * action regardless):
- *   - Add to / remove from the Priority Board watchlist  (OSD / Super Admin)
+ *   - Add to / remove from the Priority Board Fortnight lane (OSD / Super Admin)
  *   - On hold / In progress / Completed                  (task managers)
  *
- * Colour tokens are kept consistent with the rest of the app: the watchlist row
+ * Colour tokens are kept consistent with the rest of the app: the Fortnight row
  * carries the amber JS-Priority accent (its only sanctioned use here); the three
  * status rows use their own hold / info / success status tokens.
  */
 
-type ActionKey = 'watchlist' | 'on_hold' | 'in_progress' | 'completed';
+type ActionKey = 'fortnight' | 'on_hold' | 'in_progress' | 'completed';
 
 export type TaskActionModalProps = {
   open: boolean;
@@ -33,7 +33,7 @@ export type TaskActionModalProps = {
   currentStatus: PillStatusTone;
   currentLane: PillJsLane | null;
   canChangeStatus: boolean;
-  canWatchlist: boolean;
+  canSetFortnight: boolean;
 };
 
 const EXIT_MS = 200;
@@ -55,7 +55,7 @@ export function TaskActionModal({
   currentStatus,
   currentLane,
   canChangeStatus,
-  canWatchlist,
+  canSetFortnight,
 }: TaskActionModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const { render, shown, portalTarget } = useOverlayLifecycle(open, onClose, EXIT_MS, dialogRef);
@@ -80,7 +80,7 @@ export function TaskActionModal({
 
   if (!render || !portalTarget) return null;
 
-  const onWatchlist = currentLane === 'watchlist';
+  const onFortnight = currentLane === 'fortnight';
 
   const statusRow = (
     key: Extract<ActionKey, 'on_hold' | 'in_progress' | 'completed'>,
@@ -102,18 +102,18 @@ export function TaskActionModal({
   });
 
   const rows: Row[] = [
-    ...(canWatchlist
+    ...(canSetFortnight
       ? [
           {
-            key: 'watchlist' as const,
-            label: onWatchlist ? 'Remove from watchlist' : 'Add to Priority Board watchlist',
-            icon: onWatchlist ? 'ti-bookmark-filled' : 'ti-bookmark',
+            key: 'fortnight' as const,
+            label: onFortnight ? 'Remove from Fortnight' : 'Add to Fortnight lane',
+            icon: onFortnight ? 'ti-bookmark-filled' : 'ti-bookmark',
             chip: 'bg-accent-soft text-accent',
             current: false,
             run: () => {
               const fd = new FormData();
               fd.set('taskId', taskId);
-              fd.set('lane', onWatchlist ? '' : 'watchlist');
+              fd.set('lane', onFortnight ? '' : 'fortnight');
               return setJsPriorityLaneAction(undefined, fd);
             },
           },

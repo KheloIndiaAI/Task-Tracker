@@ -64,19 +64,19 @@ const LANES: { id: PillJsLane; label: string; sub: string }[] = [
   { id: 'today', label: 'Today', sub: 'Eyes on this now' },
   { id: 'week', label: 'This week', sub: 'Lands inside the week' },
   { id: 'month', label: 'This month', sub: 'On the monthly horizon' },
-  { id: 'watchlist', label: 'Watchlist', sub: 'Hold open, revisit' },
+  { id: 'fortnight', label: 'Fortnight', sub: 'Lands inside two weeks' },
 ];
 
 const LANE_SHORT: Record<PillJsLane, string> = {
   today: 'Today',
   week: 'Week',
   month: 'Month',
-  watchlist: 'Watch',
+  fortnight: 'Fort',
 };
 
 /**
  * Lane surfaces. Today → This month fades from the strongest indigo wash to
- * the lightest; Watchlist keeps its frosted glass panel (.glass-card) but
+ * the lightest; Fortnight keeps its frosted glass panel (.glass-card) but
  * with an amber wash in place of the neutral corner tint.
  *
  * This intentionally inverts CLAUDE.md's two-accent rule (indigo is
@@ -98,7 +98,7 @@ const LANE_TINT: Partial<Record<PillJsLane, React.CSSProperties>> = {
     background:
       'linear-gradient(180deg, color-mix(in srgb, var(--primary-soft) 30%, transparent) 0%, color-mix(in srgb, var(--primary-soft) 12%, transparent) 100%)',
   },
-  watchlist: {
+  fortnight: {
     background:
       'linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 60%, transparent) 0%, color-mix(in srgb, var(--accent-soft) 32%, transparent) 100%)',
   },
@@ -108,7 +108,7 @@ const LANE_BORDER: Record<PillJsLane, string> = {
   today: 'border border-primary-line',
   week: 'border border-primary-line/70',
   month: 'border border-primary-line/40',
-  watchlist: '', // .glass-card carries its own border
+  fortnight: '', // .glass-card carries its own border
 };
 
 /** Touch-friendly Sortable options: press-and-hold to drag, so a swipe
@@ -683,7 +683,7 @@ function Lane({
   onToggle: (lane: PillJsLane) => void;
   isDesktop: boolean;
 }) {
-  const isGlass = lane.id === 'watchlist';
+  const isGlass = lane.id === 'fortnight';
   const bodyId = `lane-body-${lane.id}`;
   // Desktop shows every lane regardless of the collapse flag, so the header
   // reflects "expanded" there; mobile mirrors the actual collapse state.

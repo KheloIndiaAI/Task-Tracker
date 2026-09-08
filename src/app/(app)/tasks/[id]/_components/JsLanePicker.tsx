@@ -13,7 +13,7 @@ const OPTIONS: { value: PillJsLane | 'none'; label: string; sub: string }[] = [
   { value: 'today', label: 'Today', sub: 'JS scans now' },
   { value: 'week', label: 'This week', sub: 'Lands inside the week' },
   { value: 'month', label: 'This month', sub: 'On the monthly horizon' },
-  { value: 'watchlist', label: 'Watchlist', sub: 'Hold open, revisit' },
+  { value: 'fortnight', label: 'Fortnight', sub: 'Lands inside two weeks' },
   { value: 'none', label: 'Remove from board', sub: 'Not on JS Priority' },
 ];
 
@@ -21,7 +21,7 @@ const LANE_LABEL: Record<PillJsLane, string> = {
   today: 'today',
   week: 'this week',
   month: 'this month',
-  watchlist: 'watchlist',
+  fortnight: 'fortnight',
 };
 
 type JsLanePickerProps = {

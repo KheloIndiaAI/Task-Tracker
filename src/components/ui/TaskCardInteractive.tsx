@@ -26,7 +26,7 @@ import { cn } from '@/lib/utils';
 
 export type TaskCardInteractiveProps = TaskCardProps & {
   canChangeStatus: boolean;
-  canWatchlist: boolean;
+  canSetFortnight: boolean;
 };
 
 const RING_DEADZONE = 0.12; // hide the progress ring until a real hold begins
@@ -34,8 +34,8 @@ const RING_R = 20;
 const RING_C = 2 * Math.PI * RING_R;
 
 export function TaskCardInteractive(props: TaskCardInteractiveProps) {
-  const { canChangeStatus, canWatchlist, ...cardProps } = props;
-  const longPressEnabled = canChangeStatus || canWatchlist;
+  const { canChangeStatus, canSetFortnight, ...cardProps } = props;
+  const longPressEnabled = canChangeStatus || canSetFortnight;
 
   const {
     ref,
@@ -155,7 +155,7 @@ export function TaskCardInteractive(props: TaskCardInteractiveProps) {
         currentStatus={cardProps.status}
         currentLane={cardProps.jsPriorityLane ?? null}
         canChangeStatus={canChangeStatus}
-        canWatchlist={canWatchlist}
+        canSetFortnight={canSetFortnight}
       />
     </div>
   );

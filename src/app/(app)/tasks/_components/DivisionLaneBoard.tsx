@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -8,16 +8,22 @@ import { setJsPriorityLaneAction } from '@/app/actions/tasks';
 import { cn } from '@/lib/utils';
 
 /**
- * Daily / Weekly / Monthly columns for one division on the grouped tasks list.
+ * Daily / Weekly / Fortnight / Monthly columns for one division on the grouped
+ * tasks list.
  *
- * These three columns ARE the JS Priority Board's `today` / `week` / `month`
- * lanes, read from the same `tasks.js_priority_lane` column — one field, two
- * surfaces. So clicking a pill here also puts the task on the board, which is
- * the point: a division buckets its own work here, and the JS sees it there.
+ * These four columns ARE the JS Priority Board's lanes, read from the same
+ * `tasks.js_priority_lane` column — one field, two surfaces. So clicking a pill
+ * here also puts the task on the board, which is the point: a division buckets
+ * its own work here, and the JS sees it there. (Fortnight is the lane the board
+ * used to call Watchlist; it was renamed rather than adding a fifth lane.)
  *
  * A task in no lane sits in the "Not scheduled" strip under the columns with no
- * pill lit. Watchlist tasks land there too — this view has no watchlist column,
- * and the board keeps its own.
+ * pill lit.
+ *
+ * Past the md breakpoint the columns are a slider: exactly three are in view and
+ * the arrows step through them, so a panel keeps enough width for real task
+ * names. Below md they stack and the arrows disappear — three columns on a phone
+ * would be unreadable.
  *
  * Pills are interactive only for callers who pass `canCurate` (Super Admin, OSD,
  * or the division's head / Director — see `canSetJsPriorityLane`). Everyone else
@@ -25,12 +31,12 @@ import { cn } from '@/lib/utils';
  * would refuse.
  */
 
-export type LaneKey = 'today' | 'week' | 'month';
+export type LaneKey = 'today' | 'week' | 'fortnight' | 'month';
 
 export type LaneBoardTask = {
   id: string;
   name: string;
-  /** null covers both "no lane" and Watchlist — neither has a column here. */
+  /** null means the task sits in no lane at all — every lane has a column. */
   lane: LaneKey | null;
   /** Overdue, or urgent priority — drawn in the urgent tone, as on the board. */
   needsAttention: boolean;
@@ -60,6 +66,16 @@ const COLUMNS: {
     pillOn: 'bg-success text-white',
   },
   {
+    // Warm orange rather than the mockup's red: --urgent already means "overdue
+    // or urgent" on the task names inside these very rows, and one colour must
+    // not carry two meanings a few pixels apart.
+    key: 'fortnight',
+    label: 'FortNight',
+    icon: 'ti-calendar-due',
+    head: 'bg-high-soft text-high',
+    pillOn: 'bg-high text-white',
+  },
+  {
     key: 'month',
     label: 'Monthly',
     icon: 'ti-calendar-month',
@@ -68,8 +84,22 @@ const COLUMNS: {
   },
 ];
 
-const PILL_LETTER: Record<LaneKey, string> = { today: 'D', week: 'W', month: 'M' };
-const PILL_TITLE: Record<LaneKey, string> = { today: 'Daily', week: 'Weekly', month: 'Monthly' };
+const PILL_LETTER: Record<LaneKey, string> = {
+  today: 'D',
+  week: 'W',
+  fortnight: 'F',
+  month: 'M',
+};
+const PILL_TITLE: Record<LaneKey, string> = {
+  today: 'Daily',
+  week: 'Weekly',
+  fortnight: 'FortNight',
+  month: 'Monthly',
+};
+
+/** Columns in view past the md breakpoint; the rest are a slide away. */
+const VISIBLE_COLUMNS = 3;
+const MAX_SLIDE_INDEX = Math.max(0, COLUMNS.length - VISIBLE_COLUMNS);
 
 export function DivisionLaneBoard({
   tasks,
@@ -81,6 +111,20 @@ export function DivisionLaneBoard({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [slide, setSlide] = useState(0);
+
+  // The slider only exists past md; below it the columns stack, so the arrows
+  // and the transform must not apply. Tracked in state rather than by CSS
+  // because the transform is an inline style — same approach the priority
+  // board uses for its own breakpoint-dependent behaviour.
+  const [isDesktop, setIsDesktop] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)');
+    const update = () => setIsDesktop(mq.matches);
+    update();
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
 
   const setLane = (taskId: string, lane: LaneKey | null) => {
     startTransition(async () => {
@@ -99,17 +143,19 @@ export function DivisionLaneBoard({
   const byLane = {
     today: tasks.filter((t) => t.lane === 'today'),
     week: tasks.filter((t) => t.lane === 'week'),
+    fortnight: tasks.filter((t) => t.lane === 'fortnight'),
     month: tasks.filter((t) => t.lane === 'month'),
   };
   const unscheduled = tasks.filter((t) => t.lane === null);
 
-  // Serial numbers run continuously across the columns — Daily, then Weekly,
-  // then Monthly, then the unscheduled strip — so every task in the division
-  // carries one number.
+  // Serial numbers run continuously across the columns in display order —
+  // Daily, Weekly, Fortnight, Monthly, then the unscheduled strip — so every
+  // task in the division carries exactly one number.
   const offsets = {
     today: 0,
     week: byLane.today.length,
-    month: byLane.today.length + byLane.week.length,
+    fortnight: byLane.today.length + byLane.week.length,
+    month: byLane.today.length + byLane.week.length + byLane.fortnight.length,
   };
   const unscheduledOffset = offsets.month + byLane.month.length;
 
@@ -135,46 +181,86 @@ export function DivisionLaneBoard({
         </p>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-2.5 md:grid-cols-3">
-        {COLUMNS.map((col) => {
-          const items = byLane[col.key];
-          return (
-            <section
-              key={col.key}
-              aria-label={col.label}
-              className="overflow-hidden rounded-lg border border-line bg-panel"
-            >
-              <header
-                className={cn('flex items-center justify-between gap-2 px-2.5 py-1.5', col.head)}
-              >
-                <span className="inline-flex items-center gap-1.5 text-[13px] font-medium">
-                  <i className={cn('ti', col.icon, 'text-[14px]')} aria-hidden="true" />
-                  {col.label}
-                </span>
-                <span className="rounded-pill bg-panel/70 px-1.5 py-0.5 text-[10px] font-medium tabular-nums">
-                  {items.length} {items.length === 1 ? 'task' : 'tasks'}
-                </span>
-              </header>
+      {/* Slider: gutters on each side hold the arrows, so they sit beside the
+          panels rather than on top of them. */}
+      <div className="relative md:px-9">
+        <SlideArrow
+          side="left"
+          disabled={slide === 0}
+          onClick={() => setSlide((i) => Math.max(0, i - 1))}
+        />
+        <SlideArrow
+          side="right"
+          disabled={slide >= MAX_SLIDE_INDEX}
+          onClick={() => setSlide((i) => Math.min(MAX_SLIDE_INDEX, i + 1))}
+        />
 
-              <div className="flex items-center gap-2 border-b border-line-2 px-2 py-1 text-[9px] uppercase tracking-[0.08em] text-ink-3">
-                <span className="w-6 shrink-0 text-right">#</span>
-                <span className="flex-1">Task</span>
-              </div>
+        <div className="overflow-hidden">
+          <div
+            className={cn(
+              'flex flex-col gap-2.5',
+              // Past md: a row of fixed thirds. Gutters come from per-panel
+              // padding, not `gap`, because three thirds plus gaps would
+              // overflow the viewport and break the slide arithmetic.
+              'md:flex-row md:gap-0 md:transition-transform md:duration-300 md:ease-out',
+              'motion-reduce:transition-none',
+            )}
+            style={
+              isDesktop
+                ? { transform: `translateX(-${slide * (100 / VISIBLE_COLUMNS)}%)` }
+                : undefined
+            }
+          >
+            {COLUMNS.map((col) => {
+              const items = byLane[col.key];
+              return (
+                <div key={col.key} className="md:w-1/3 md:shrink-0 md:px-[5px]">
+                  <section
+                    aria-label={col.label}
+                    className="overflow-hidden rounded-lg border border-line bg-panel"
+                  >
+                    <header
+                      className={cn(
+                        'flex items-center justify-between gap-2 px-2.5 py-1.5',
+                        col.head,
+                      )}
+                    >
+                      <span className="inline-flex items-center gap-1.5 text-[13px] font-medium">
+                        <i className={cn('ti', col.icon, 'text-[14px]')} aria-hidden="true" />
+                        {col.label}
+                      </span>
+                      <span className="rounded-pill bg-panel/70 px-1.5 py-0.5 text-[10px] font-medium tabular-nums">
+                        {items.length} {items.length === 1 ? 'task' : 'tasks'}
+                      </span>
+                    </header>
 
-              {items.length === 0 ? (
-                <p className="px-2.5 py-4 text-center text-[11px] italic text-ink-3">
-                  {canCurate ? 'Tap D, W or M below to add a task' : 'Nothing here yet'}
-                </p>
-              ) : (
-                <ul>
-                  {items.map((t, i) => (
-                    <LaneRow key={t.id} task={t} n={offsets[col.key] + i + 1} {...rowProps} />
-                  ))}
-                </ul>
-              )}
-            </section>
-          );
-        })}
+                    <div className="flex items-center gap-2 border-b border-line-2 px-2 py-1 text-[9px] uppercase tracking-[0.08em] text-ink-3">
+                      <span className="w-6 shrink-0 text-right">#</span>
+                      <span className="flex-1">Task</span>
+                    </div>
+
+                    {items.length === 0 ? (
+                      <p className="px-2.5 py-4 text-center text-[11px] italic text-ink-3">
+                        {canCurate ? 'Tap D, W, F or M below to add a task' : 'Nothing here yet'}
+                      </p>
+                    ) : (
+                      <ul>
+                        {items.map((t, i) => (
+                          <LaneRow
+                            key={t.id}
+                            task={t}
+                            n={offsets[col.key] + i + 1}
+                            {...rowProps}
+                          />
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       {unscheduled.length > 0 ? (
@@ -196,6 +282,43 @@ export function DivisionLaneBoard({
         </section>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * One slider arrow, parked in the gutter beside the panels. Both arrows are
+ * always rendered past md and the unusable one is disabled rather than removed,
+ * so the strip does not shift sideways as you page through it. Hidden below md,
+ * where the columns stack and there is nothing to slide.
+ */
+function SlideArrow({
+  side,
+  disabled,
+  onClick,
+}: {
+  side: 'left' | 'right';
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={side === 'left' ? 'Show previous columns' : 'Show next columns'}
+      className={cn(
+        'absolute top-1/2 z-10 hidden h-8 w-8 -translate-y-1/2 place-items-center rounded-lg',
+        'border border-line bg-panel text-ink-2 shadow-card transition-colors md:grid',
+        'hover:border-ink-4 hover:text-ink',
+        'disabled:cursor-default disabled:opacity-35 disabled:hover:border-line disabled:hover:text-ink-2',
+        side === 'left' ? 'left-0' : 'right-0',
+      )}
+    >
+      <i
+        className={cn('ti text-[15px]', side === 'left' ? 'ti-chevron-left' : 'ti-chevron-right')}
+        aria-hidden="true"
+      />
+    </button>
   );
 }
 

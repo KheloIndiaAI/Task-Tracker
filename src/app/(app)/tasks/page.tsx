@@ -110,11 +110,11 @@ export default async function TasksPage({ searchParams }: PageProps) {
     me.isPmu ? getPmuTeamMemberIds(me.id) : Promise.resolve<string[]>([]),
   ]);
 
-  // Mobile task-card action permissions. `canWatchlist` (Add to Priority Board
-  // Watchlist) is OSD / Super Admin only; `canChangeStatus` is decided per card
+  // Mobile task-card action permissions. `canSetFortnight` (Add to Priority Board
+  // Fortnight lane) is OSD / Super Admin only; `canChangeStatus` is decided per card
   // via canManageTask below. Both only gate what the UI offers — the server
   // actions re-authorize independently.
-  const canWatchlist = me.isSuperAdmin || me.hierarchySlot === 'osd';
+  const canSetFortnight = me.isSuperAdmin || me.hierarchySlot === 'osd';
   const permCaller = {
     id: me.id,
     isSuperAdmin: me.isSuperAdmin,
@@ -229,7 +229,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
                       />
                       <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 md:gap-3">
                         {group.tasks.map((t) => (
-                          <TaskRow key={t.id} task={t} caller={permCaller} canWatchlist={canWatchlist} />
+                          <TaskRow key={t.id} task={t} caller={permCaller} canSetFortnight={canSetFortnight} />
                         ))}
                       </ul>
                     </GroupedDivisionAccordion>
@@ -267,7 +267,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
                   ) : (
                     <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 md:gap-3">
                       {segment.tasks.map((t) => (
-                        <TaskRow key={t.id} task={t} caller={permCaller} canWatchlist={canWatchlist} />
+                        <TaskRow key={t.id} task={t} caller={permCaller} canSetFortnight={canSetFortnight} />
                       ))}
                     </ul>
                   )}
@@ -297,11 +297,11 @@ type PermCaller = {
 function TaskRow({
   task: t,
   caller,
-  canWatchlist,
+  canSetFortnight,
 }: {
   task: VisibleTask;
   caller: PermCaller;
-  canWatchlist: boolean;
+  canSetFortnight: boolean;
 }) {
   const subtaskTotal = t.subtasks.length;
   const subtaskDone = t.subtasks.filter((s) => s.status === 'completed').length;
@@ -346,17 +346,17 @@ function TaskRow({
         mobileSplit
         href={`/tasks/${t.id}`}
         canChangeStatus={canChangeStatus}
-        canWatchlist={canWatchlist}
+        canSetFortnight={canSetFortnight}
       />
     </li>
   );
 }
 
 /**
- * Shape the division's tasks for the Daily/Weekly/Monthly columns. The lane is
- * the task's JS Priority lane; 'watchlist' collapses to null because that view
- * has no watchlist column (the priority board keeps its own). A task is drawn
- * in the urgent tone when it is overdue or flagged urgent.
+ * Shape the division's tasks for the Daily / Weekly / Fortnight / Monthly
+ * columns. The lane is the task's JS Priority lane verbatim — every lane now
+ * has a column, so nothing collapses to null but "no lane at all". A task is
+ * drawn in the urgent tone when it is overdue or flagged urgent.
  */
 function toLaneBoardTasks(tasks: VisibleTask[]): LaneBoardTask[] {
   return tasks.map((t) => {
@@ -364,7 +364,10 @@ function toLaneBoardTasks(tasks: VisibleTask[]): LaneBoardTask[] {
     return {
       id: t.id,
       name: t.name,
-      lane: lane === 'today' || lane === 'week' || lane === 'month' ? lane : null,
+      lane:
+        lane === 'today' || lane === 'week' || lane === 'fortnight' || lane === 'month'
+          ? lane
+          : null,
       needsAttention: formatDue(t.dueDate).tone === 'overdue' || t.priority === 'urgent',
     };
   });

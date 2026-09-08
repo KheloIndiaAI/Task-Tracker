@@ -70,7 +70,11 @@ enum JsPriorityLane {
   today
   week
   month
-  watchlist
+  // Renamed from `watchlist` on 2026-09-08 when the tasks list gained its
+  // Fortnight column. Declaration order is unchanged (renaming a value in place
+  // does not move it), so this still sorts last — which is why the board shows
+  // it last while the tasks list orders its columns D / W / F / M by horizon.
+  fortnight
 }
 
 enum Visibility {

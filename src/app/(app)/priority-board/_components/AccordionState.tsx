@@ -14,11 +14,11 @@ import type { PillJsLane } from '@/components/ui/Pill';
  * Sections default to collapsed; the last state is remembered in
  * localStorage. Desktop ignores this entirely (CSS keeps every lane open).
  */
-const LANE_IDS: PillJsLane[] = ['today', 'week', 'month', 'watchlist'];
+const LANE_IDS: PillJsLane[] = ['today', 'week', 'month', 'fortnight'];
 const STORAGE_KEY = 'pb-accordion-collapsed';
 
 type CollapsedMap = Record<PillJsLane, boolean>;
-const ALL_COLLAPSED: CollapsedMap = { today: true, week: true, month: true, watchlist: true };
+const ALL_COLLAPSED: CollapsedMap = { today: true, week: true, month: true, fortnight: true };
 
 type AccordionValue = {
   collapsed: CollapsedMap;
@@ -92,7 +92,7 @@ export function AccordionProvider({ children }: { children: React.ReactNode }) {
 export function useAccordion(): AccordionValue {
   return (
     useContext(AccordionContext) ?? {
-      collapsed: { today: false, week: false, month: false, watchlist: false },
+      collapsed: { today: false, week: false, month: false, fortnight: false },
       toggle: () => {},
       expand: () => {},
     }
