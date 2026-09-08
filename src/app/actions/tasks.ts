@@ -27,7 +27,7 @@ import { buildVisibilityClauses, getPmuParentDivisionHeadId } from '@/lib/visibi
 import { getPmuTeamMemberIds, isElevatedOverDivision } from '@/lib/pmu-team';
 import {
   buildTaskParticipantWhere,
-  isTaskCollaborator,
+  isTaskContributor,
   isTaskParticipant,
 } from '@/lib/task-participants';
 import { nextSubtaskRefNumber, nextTaskRefNumber } from '@/lib/task-ref';
@@ -886,10 +886,11 @@ export async function updateTaskFieldsAction(
   if (!task) return fail('Task not found.', epoch);
 
   const baseEditor = await canEditTask(me.id, task);
-  // A collaborator who is not otherwise an editor may contribute the task's
-  // context (description) — but nothing else. Any attempt to touch another
-  // field on the same submission is rejected below.
-  const collaboratorOnly = !baseEditor && (await isTaskCollaborator(me.id, task.id));
+  // A contributor who is not otherwise an editor — an explicit collaborator,
+  // or anyone @mentioned in the discussion — may contribute the task's context
+  // (description) but nothing else. Any attempt to touch another field on the
+  // same submission is rejected below.
+  const collaboratorOnly = !baseEditor && (await isTaskContributor(me.id, task.id));
   if (!baseEditor && !collaboratorOnly) {
     return fail('Only the task owner, creator, a collaborator, or a head of division can edit this task.', epoch);
   }
@@ -1159,8 +1160,9 @@ export async function addSubtaskAction(
   // a contribute right: the owner, creator, or a head/OSD/Super Admin of the
   // parent's division, plus any explicit collaborator on the task (they are
   // meant to help break the work down). A plain division member who merely
-  // *sees* the task still cannot add subtasks.
-  if (!(await canEditTask(me.id, parent)) && !(await isTaskCollaborator(me.id, parent.id))) {
+  // *sees* the task still cannot add subtasks. Being @mentioned in the
+  // discussion counts as an invitation to help, so it carries the same right.
+  if (!(await canEditTask(me.id, parent)) && !(await isTaskContributor(me.id, parent.id))) {
     return fail('Only the task owner, creator, a collaborator, or a head of division can add subtasks.', epoch);
   }
 

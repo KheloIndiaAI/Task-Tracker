@@ -112,3 +112,36 @@ export async function isTaskCollaborator(
   });
   return row !== null;
 }
+
+/** Whether anyone has @mentioned this user in the task's discussion. */
+export async function isMentionedOnTask(
+  userId: string,
+  taskId: string,
+): Promise<boolean> {
+  const row = await prisma.taskComment.findFirst({
+    where: { taskId, mentions: { has: userId } },
+    select: { id: true },
+  });
+  return row !== null;
+}
+
+/**
+ * Whether a user may CONTRIBUTE to a task — add documents, edit its context,
+ * create subtasks — without owning it or being able to redefine it.
+ *
+ * Granted to explicit collaborators and to anyone @mentioned in the task's
+ * discussion. Pulling someone into the conversation is an invitation to help,
+ * so it carries the same bounded rights rather than read-only silence; the
+ * mention itself is already restricted to users who may take part in the task
+ * (see `resolveMentions`), so this cannot hand rights to an arbitrary outsider.
+ *
+ * Deliberately NOT redefine or delete: those stay with the owner, the creator,
+ * and the division's head.
+ */
+export async function isTaskContributor(
+  userId: string,
+  taskId: string,
+): Promise<boolean> {
+  if (await isTaskCollaborator(userId, taskId)) return true;
+  return isMentionedOnTask(userId, taskId);
+}

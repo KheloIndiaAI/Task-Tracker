@@ -5,6 +5,13 @@ import {
   type CallerSummary,
 } from '@/lib/visibility-rules';
 
+/**
+ * Clauses every caller gets before any role branch: owner, collaborator,
+ * personal-created, and @mentioned. Named so adding another base clause does
+ * not mean re-counting by hand in every role test below.
+ */
+const BASE_CLAUSES = 4;
+
 const KI = 'div-ki';
 const NSDF = 'div-nsdf';
 const ABD = 'div-abd';
@@ -30,11 +37,11 @@ function divisionClause(clauses: ReturnType<typeof buildVisibilityClausesFrom>) 
 
 /**
  * The ROLE-based personal clause, if the caller's role grants one. Skips the
- * three base clauses, so the creator's own `{ createdById, personal }` clause
- * is never mistaken for a leadership grant.
+ * base clauses, so the creator's own `{ createdById, personal }` clause is
+ * never mistaken for a leadership grant.
  */
 function personalRoleClause(clauses: ReturnType<typeof buildVisibilityClausesFrom>) {
-  return clauses.slice(3).find((c) => c.visibility === 'personal') as
+  return clauses.slice(BASE_CLAUSES).find((c) => c.visibility === 'personal') as
     | { visibility?: string; divisionId?: { in?: string[] } }
     | undefined;
 }
@@ -55,8 +62,8 @@ describe('buildVisibilityClausesFrom — base clauses', () => {
   });
 
   it('emits no role-based personal clause for non-leadership roles', () => {
-    // Personal tasks reach these roles only via the three base clauses
-    // (owner / collaborator / creator). Leadership is covered separately in
+    // Personal tasks reach these roles only via the base clauses (owner /
+    // collaborator / creator / mentioned). Leadership is covered separately in
     // "personal-task visibility for leadership" below.
     const variants: CallerSummary[] = [
       caller({ hierarchySlot: 'section_officer' }),
@@ -67,10 +74,47 @@ describe('buildVisibilityClausesFrom — base clauses', () => {
     for (const v of variants) {
       // No headship — headship grants personal reach on its own, whatever the slot.
       const clauses = buildVisibilityClausesFrom(v, []);
-      for (const c of clauses.slice(3)) {
+      for (const c of clauses.slice(BASE_CLAUSES)) {
         expect(c.visibility).toBe('division');
       }
     }
+  });
+});
+
+describe('buildVisibilityClausesFrom — @mention grants sight', () => {
+  const MENTION_CLAUSE = { comments: { some: { mentions: { has: 'me' } } } };
+
+  it('is a base clause, so it reaches every role', () => {
+    // Including the branches that return before the division clauses — a
+    // mention has to work for a PMU member and a JS user too, or the
+    // notification points at a task they cannot open.
+    for (const me of [
+      caller({ isSuperAdmin: true }),
+      caller({ hierarchySlot: 'osd' }),
+      caller({ hierarchySlot: 'js' }),
+      caller({ hierarchySlot: 'director' }),
+      caller({ hierarchySlot: 'aso' }),
+      caller({ hierarchySlot: 'consultant' }),
+      caller({ isPmu: true, pmuId: 'div-pmu' }),
+    ]) {
+      expect(buildVisibilityClausesFrom(me, [])).toContainEqual(MENTION_CLAUSE);
+    }
+  });
+
+  it('matches the caller only — never a mention of someone else', () => {
+    const clauses = buildVisibilityClausesFrom(caller({ id: 'me' }), []);
+    const mention = clauses.find((c) => 'comments' in c) as
+      | { comments?: { some?: { mentions?: { has?: string } } } }
+      | undefined;
+    expect(mention?.comments?.some?.mentions?.has).toBe('me');
+  });
+
+  it('does not widen anything else — it is scoped to the comments relation', () => {
+    // The clause must not carry a bare visibility or divisionId, which would
+    // hand over more than the one task the caller was named on.
+    const clauses = buildVisibilityClausesFrom(caller(), []);
+    const mention = clauses.find((c) => 'comments' in c) as Record<string, unknown>;
+    expect(Object.keys(mention)).toEqual(['comments']);
   });
 });
 
@@ -124,9 +168,9 @@ describe('buildVisibilityClausesFrom — roles', () => {
   it('super admin and OSD see everything, division-unfiltered, personal included', () => {
     for (const me of [caller({ isSuperAdmin: true }), caller({ hierarchySlot: 'osd' })]) {
       const clauses = buildVisibilityClausesFrom(me, []);
-      expect(clauses).toHaveLength(5);
-      expect(clauses[3]).toEqual({ visibility: 'division' });
-      expect(clauses[4]).toEqual({ visibility: 'personal' });
+      expect(clauses).toHaveLength(BASE_CLAUSES + 2);
+      expect(clauses[BASE_CLAUSES]).toEqual({ visibility: 'division' });
+      expect(clauses[BASE_CLAUSES + 1]).toEqual({ visibility: 'personal' });
     }
   });
 
@@ -161,24 +205,24 @@ describe('buildVisibilityClausesFrom — roles', () => {
 
   it('JS keeps the priority-board surface', () => {
     const clauses = buildVisibilityClausesFrom(caller({ hierarchySlot: 'js' }), []);
-    expect(clauses[3]).toEqual({
+    expect(clauses[BASE_CLAUSES]).toEqual({
       visibility: 'division',
       jsPriorityLane: { not: null },
     });
-    expect(clauses).toHaveLength(4);
+    expect(clauses).toHaveLength(BASE_CLAUSES + 1);
   });
 
   it('a PMU member with no teammates loaded sees own + collaborated + created only', () => {
     const clauses = buildVisibilityClausesFrom(caller({ isPmu: true }), []);
-    expect(clauses).toHaveLength(3);
+    expect(clauses).toHaveLength(BASE_CLAUSES);
   });
 
   it("PMU members see their PMU team's tasks, never the whole division", () => {
     const team = ['me', 'mate-1', 'mate-2'];
     const clauses = buildVisibilityClausesFrom(caller({ isPmu: true }), [], team);
-    // 3 base clauses + the owner-scoped PMU clause — no division clause.
-    expect(clauses).toHaveLength(4);
-    expect(clauses[3]).toEqual({ visibility: 'division', ownerId: { in: team } });
+    // Base clauses + the owner-scoped PMU clause — no division clause.
+    expect(clauses).toHaveLength(BASE_CLAUSES + 1);
+    expect(clauses[BASE_CLAUSES]).toEqual({ visibility: 'division', ownerId: { in: team } });
     // Crucially, no bare divisionId clause that would leak the division board.
     expect(clauses.some((c) => 'divisionId' in c)).toBe(false);
   });
@@ -363,7 +407,7 @@ describe('buildVisibilityClausesFrom — PMU team leader read access', () => {
       [],
       { pmuTeamLeaderMemberIds: [] },
     );
-    expect(clauses).toHaveLength(3);
+    expect(clauses).toHaveLength(BASE_CLAUSES);
   });
 });
 

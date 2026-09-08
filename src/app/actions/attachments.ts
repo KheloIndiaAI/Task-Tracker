@@ -19,7 +19,7 @@ import {
 } from '@/lib/document-centre';
 import { getPmuTeamMemberIds, isElevatedOverDivision } from '@/lib/pmu-team';
 import { getMemberDivisionIds } from '@/lib/rbac';
-import { isTaskCollaborator } from '@/lib/task-participants';
+import { isTaskContributor } from '@/lib/task-participants';
 import {
   deleteObject as deleteS3Object,
   isS3Configured,
@@ -148,7 +148,7 @@ export async function canAddTaskAttachments(
   taskId: string,
 ): Promise<boolean> {
   if (await canEditTaskAttachments(callerId, taskId)) return true;
-  return isTaskCollaborator(callerId, taskId);
+  return isTaskContributor(callerId, taskId);
 }
 
 export async function canEditTfAttachments(

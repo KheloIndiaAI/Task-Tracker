@@ -108,6 +108,16 @@ export function buildVisibilityClausesFrom(
     // so it never widens division-task visibility (division tasks I created
     // are already covered by the role clauses below).
     { createdById: me.id, visibility: 'personal' },
+    // Always: tasks where someone @mentioned me in the discussion. Pulling a
+    // colleague into a conversation has to let them read what it is about —
+    // without this the notification pointed at a task they could not open.
+    //
+    // A base clause on purpose: it sits above every role branch, so it reaches
+    // a mentioned user whatever their slot, including the PMU and JS branches
+    // that return before the division clauses. `resolveMentions` only resolves
+    // a handle belonging to someone who may take part in the task, so this
+    // widens sight by explicit invitation, never by guessing a name.
+    { comments: { some: { mentions: { has: me.id } } } },
   ];
 
   // A PMU team leader additionally sees their PMU team's non-personal tasks

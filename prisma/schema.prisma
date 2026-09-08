@@ -539,6 +539,11 @@ model TaskComment {
 
   @@index([taskId, createdAt(sort: Desc)])
   @@index([parentCommentId])
+  // Every task read now asks "was I mentioned in this task's discussion?"
+  // (see the base clauses in buildVisibilityClausesFrom). Without a GIN index
+  // that array containment is a sequential scan of every comment, on a path
+  // that runs for the list, search, calendar and each task page.
+  @@index([mentions], type: Gin)
   @@map("task_comments")
 }
 

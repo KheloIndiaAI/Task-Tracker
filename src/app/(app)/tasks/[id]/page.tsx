@@ -128,12 +128,20 @@ export default async function TaskDetailPage({ params }: PageProps) {
 
   const isOwner = task.ownerId === session.user.id;
   const isSubtask = task.parentTaskId !== null;
-  // Explicit collaborators (any role) may contribute to the task: add
-  // documents, edit its context, and create subtasks — mirrored server-side
-  // by isTaskCollaborator. It does not grant redefine/delete powers.
+  // Contributors may add documents, edit the task's context, and create
+  // subtasks — mirrored server-side by isTaskContributor. It grants no
+  // redefine/delete powers. Two ways in: an explicit collaborator row, or an
+  // @mention in the discussion, which is an invitation to help rather than
+  // just something to read.
   const isCollaborator = task.collaborators.some(
     (c) => c.userId === session.user.id,
   );
+  const isMentioned = task.comments.some(
+    (c) =>
+      c.mentions.includes(session.user.id) ||
+      c.replies.some((r) => r.mentions.includes(session.user.id)),
+  );
+  const isContributor = isCollaborator || isMentioned;
   const isUnassigned = task.ownerId === task.createdById;
   // The Owner row reads as "Unassigned" for a top-level division task still
   // owned by its creator — the state a division member can pull from. A
@@ -336,7 +344,7 @@ export default async function TaskDetailPage({ params }: PageProps) {
   // Subtask assignee candidates: the same participant set as collaborators and
   // @mentions (now including any cross-linked division). Collaborators can
   // create subtasks too, so they need the picker options.
-  const subtaskAssigneeRows = canEditFields || isCollaborator
+  const subtaskAssigneeRows = canEditFields || isContributor
     ? await prisma.user.findMany({
         where: participantWhere,
         select: {
@@ -686,7 +694,7 @@ export default async function TaskDetailPage({ params }: PageProps) {
       <SectionContext
         taskId={task.id}
         description={task.description}
-        canEdit={canEditFields || isCollaborator}
+        canEdit={canEditFields || isContributor}
       />
 
       {/* Subtasks are one level deep — a subtask has no Subtasks section of its
@@ -696,7 +704,7 @@ export default async function TaskDetailPage({ params }: PageProps) {
           taskId={task.id}
           subtasks={subtasksForPanel}
           canEdit={canEditFields}
-          canAdd={!isSubtask && (canEditFields || isCollaborator)}
+          canAdd={!isSubtask && (canEditFields || isContributor)}
           assignees={subtaskAssignees}
           parentDueDate={task.dueDate}
           s3Ready={s3Ready}
@@ -746,7 +754,7 @@ export default async function TaskDetailPage({ params }: PageProps) {
           parentId={task.id}
           attachments={taskAttachments}
           canEdit={canEditAttachments}
-          canAdd={canEditAttachments || isCollaborator}
+          canAdd={canEditAttachments || isContributor}
           s3Configured={s3Ready}
         />
       </DetailSection>
