@@ -268,6 +268,39 @@ body.sortable-dragging .pb-accordion-body {
 .upload-btn:hover .upload-btn-icon {
   animation: uploadBob 1s ease-in-out infinite;
 }
+/* ============================================================
+   Tasks list — the per-row scheduler. Tapping the right half of a
+   row slides the D / W / F / M options in over the clock icon; they
+   slide back out once a bucket is picked. The global reduced-motion
+   floor below flattens both to an instant swap.
+   ============================================================ */
+.lane-options-in {
+  animation: laneOptionsIn var(--dur-base) var(--ease-emphasis);
+}
+@keyframes laneOptionsIn {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.lane-options-out {
+  animation: laneOptionsOut var(--dur-fast) var(--ease-standard) forwards;
+}
+@keyframes laneOptionsOut {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+}
+
 @keyframes uploadBob {
   0%,
   100% {

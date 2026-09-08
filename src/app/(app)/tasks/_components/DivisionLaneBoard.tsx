@@ -112,6 +112,27 @@ export function DivisionLaneBoard({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [slide, setSlide] = useState(0);
+  // At most one row shows its scheduler at a time, so the options never
+  // compete for attention and a stray click always lands somewhere sensible.
+  const [openRow, setOpenRow] = useState<string | null>(null);
+
+  // Clicking anywhere else puts the options away — the same dismissal the
+  // division and sort dropdowns on this page already use.
+  useEffect(() => {
+    if (!openRow) return;
+    const onDown = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('[data-lane-scheduler]')) setOpenRow(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpenRow(null);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [openRow]);
 
   // The slider only exists past md; below it the columns stack, so the arrows
   // and the transform must not apply. Tracked in state rather than by CSS
@@ -159,7 +180,13 @@ export function DivisionLaneBoard({
   };
   const unscheduledOffset = offsets.month + byLane.month.length;
 
-  const rowProps = { canCurate, busy: pending, onSet: setLane };
+  const rowProps = {
+    canCurate,
+    busy: pending,
+    onSet: setLane,
+    openRow,
+    onOpenRow: setOpenRow,
+  };
 
   return (
     <div className="mb-4 pb-3 border-b border-line-2">
@@ -217,11 +244,14 @@ export function DivisionLaneBoard({
                 <div key={col.key} className="md:w-1/3 md:shrink-0 md:px-[5px]">
                   <section
                     aria-label={col.label}
-                    className="overflow-hidden rounded-lg border border-line bg-panel"
+                    // No overflow-hidden: a row's scheduler confirmation sits
+                    // just above the row and would be clipped by it. The header
+                    // rounds its own top corners instead.
+                    className="rounded-lg border border-line bg-panel"
                   >
                     <header
                       className={cn(
-                        'flex items-center justify-between gap-2 px-2.5 py-1.5',
+                        'flex items-center justify-between gap-2 rounded-t-[7px] px-2.5 py-1.5',
                         col.head,
                       )}
                     >
@@ -266,7 +296,8 @@ export function DivisionLaneBoard({
       {unscheduled.length > 0 ? (
         <section
           aria-label="Not scheduled"
-          className="mt-2.5 overflow-hidden rounded-lg border border-line bg-panel"
+          // No overflow-hidden — see the column sections above.
+          className="mt-2.5 rounded-lg border border-line bg-panel"
         >
           <header className="flex items-center justify-between gap-2 border-b border-line-2 px-2.5 py-1.5">
             <span className="section-label">Not scheduled</span>
@@ -322,72 +353,165 @@ function SlideArrow({
   );
 }
 
+const PILL_BASE =
+  'grid h-[17px] w-[17px] place-items-center rounded-[5px] text-[9px] font-medium leading-none transition-colors';
+
+/**
+ * One task row.
+ *
+ * The row is split down the middle: the left half is a link that opens the
+ * task, the right half is the scheduler. At rest the scheduler is a single
+ * clock icon — four pills on every row was a wall of controls that buried the
+ * task names. Tapping it slides D / W / F / M in; picking one files the task
+ * and slides them back out, briefly confirming which list it went to.
+ *
+ * Readers who cannot curate get no clock and no dead pills — just a static
+ * chip showing where the task already sits, and nothing at all if it sits
+ * nowhere.
+ */
 function LaneRow({
   task,
   n,
   canCurate,
   busy,
   onSet,
+  openRow,
+  onOpenRow,
 }: {
   task: LaneBoardTask;
   n: number;
   canCurate: boolean;
   busy: boolean;
   onSet: (taskId: string, lane: LaneKey | null) => void;
+  openRow: string | null;
+  onOpenRow: (taskId: string | null) => void;
 }) {
+  const open = openRow === task.id;
+  // What the caller just chose, held while the confirmation shows. `removed` is
+  // the case where they tapped the lane the task was already in, which takes it
+  // off the board — the pill must go dark, not light up.
+  const [justPicked, setJustPicked] = useState<{ lane: LaneKey; removed: boolean } | null>(
+    null,
+  );
+  const current = COLUMNS.find((c) => c.key === task.lane);
+
+  // Confirm the pick in place for a beat, then put the options away. The list
+  // refreshes underneath in the meantime and the row moves to its new column.
+  useEffect(() => {
+    if (!justPicked) return;
+    const t = setTimeout(() => {
+      setJustPicked(null);
+      onOpenRow(null);
+    }, 900);
+    return () => clearTimeout(t);
+  }, [justPicked, onOpenRow]);
+
+  const pick = (lane: LaneKey) => {
+    const removed = task.lane === lane;
+    setJustPicked({ lane, removed });
+    onSet(task.id, removed ? null : lane);
+  };
+
   return (
-    <li className="flex items-center gap-2 border-b border-line-2 px-2 py-1 last:border-b-0">
+    <li
+      className={cn(
+        'flex items-center gap-2 border-b border-line-2 px-2 py-1 last:border-b-0 transition-colors',
+        open && 'bg-primary-soft/40',
+      )}
+    >
       <span className="w-6 shrink-0 text-right font-mono text-[10px] tabular-nums text-ink-3">
         {n}.
       </span>
+
+      {/* Left half — opens the task. */}
       <Link
         href={`/tasks/${task.id}`}
         className={cn(
-          'min-w-0 flex-1 truncate text-[12.5px] leading-snug hover:underline',
+          'min-w-0 flex-1 basis-0 truncate py-1 text-[12.5px] leading-snug hover:underline',
           task.needsAttention ? 'text-urgent' : 'text-ink',
         )}
       >
         {task.name}
       </Link>
-      <span className="flex shrink-0 items-center gap-0.5">
-        {COLUMNS.map((col) => {
-          const on = task.lane === col.key;
-          const base =
-            'grid h-[17px] w-[17px] place-items-center rounded-[5px] text-[9px] font-medium leading-none transition-colors';
-          if (!canCurate) {
-            return (
-              <span
-                key={col.key}
-                title={`${PILL_TITLE[col.key]}${on ? '' : ' — not set'}`}
-                className={cn(base, on ? col.pillOn : 'bg-line-2 text-ink-3')}
-              >
-                {PILL_LETTER[col.key]}
-              </span>
-            );
-          }
-          return (
-            <button
-              key={col.key}
-              type="button"
-              disabled={busy}
-              onClick={() => onSet(task.id, on ? null : col.key)}
-              aria-pressed={on}
-              title={
-                on
-                  ? `Remove from ${PILL_TITLE[col.key]} (and the priority board)`
-                  : `Move to ${PILL_TITLE[col.key]} (also adds to the priority board)`
-              }
-              className={cn(
-                base,
-                'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary disabled:opacity-50',
-                on ? col.pillOn : 'bg-line-2 text-ink-3 hover:bg-line hover:text-ink-2',
-              )}
+
+      {/* Right half — the scheduler. */}
+      <div
+        data-lane-scheduler=""
+        className="relative flex flex-1 basis-0 items-center justify-end"
+      >
+        {!canCurate ? (
+          current ? (
+            <span
+              title={`${PILL_TITLE[current.key]}`}
+              className={cn(PILL_BASE, current.pillOn)}
             >
-              {PILL_LETTER[col.key]}
-            </button>
-          );
-        })}
-      </span>
+              {PILL_LETTER[current.key]}
+            </span>
+          ) : null
+        ) : open ? (
+          <div className="lane-options-in flex items-center gap-1">
+            {justPicked ? (
+              <span
+                role="status"
+                className="absolute -top-6 right-0 z-20 whitespace-nowrap rounded-md bg-ink px-2 py-1 text-[10px] font-medium text-onink shadow-card"
+              >
+                {justPicked.removed
+                  ? `Removed from ${PILL_TITLE[justPicked.lane]}`
+                  : `Added to ${PILL_TITLE[justPicked.lane]} tasks`}
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onOpenRow(null)}
+                aria-label="Hide scheduling options"
+                className="grid h-[17px] w-[17px] place-items-center rounded-[5px] text-ink-3 transition-colors hover:text-ink"
+              >
+                <i className="ti ti-chevron-right text-[12px]" aria-hidden="true" />
+              </button>
+            )}
+
+            {COLUMNS.map((col) => {
+              const on = justPicked
+                ? !justPicked.removed && justPicked.lane === col.key
+                : task.lane === col.key;
+              return (
+                <button
+                  key={col.key}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => pick(col.key)}
+                  aria-pressed={on}
+                  title={
+                    task.lane === col.key
+                      ? `Remove from ${PILL_TITLE[col.key]} (and the priority board)`
+                      : `Add to ${PILL_TITLE[col.key]} (also adds to the priority board)`
+                  }
+                  className={cn(
+                    PILL_BASE,
+                    'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary disabled:opacity-50',
+                    on ? col.pillOn : 'bg-line-2 text-ink-3 hover:bg-line hover:text-ink-2',
+                  )}
+                >
+                  {PILL_LETTER[col.key]}
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onOpenRow(task.id)}
+            aria-label={`Schedule ${task.name}`}
+            aria-expanded={false}
+            className="flex w-full items-center justify-end gap-1.5 py-1 text-ink-3 transition-colors hover:text-ink"
+          >
+            {current ? (
+              <span className={cn(PILL_BASE, current.pillOn)}>{PILL_LETTER[current.key]}</span>
+            ) : null}
+            <i className="ti ti-clock text-[14px]" aria-hidden="true" />
+          </button>
+        )}
+      </div>
     </li>
   );
 }
