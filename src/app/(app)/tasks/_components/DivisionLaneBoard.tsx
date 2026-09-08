@@ -413,103 +413,114 @@ function LaneRow({
   };
 
   return (
-    <li
-      className={cn(
-        'flex items-center gap-2 border-b border-line-2 px-2 py-1 last:border-b-0 transition-colors',
-        open && 'bg-primary-soft/40',
-      )}
-    >
+    <li className="flex items-center gap-2 border-b border-line-2 px-2 py-1 last:border-b-0">
       <span className="w-6 shrink-0 text-right font-mono text-[10px] tabular-nums text-ink-3">
         {n}.
       </span>
 
-      {/* Left half — opens the task. */}
+      {/* The name takes the row. It keeps its full width whether the options
+          are open or not — they float over it rather than displacing it. */}
       <Link
         href={`/tasks/${task.id}`}
         className={cn(
-          'min-w-0 flex-1 basis-0 truncate py-1 text-[12.5px] leading-snug hover:underline',
+          'min-w-0 flex-1 truncate py-1 text-[12.5px] leading-snug hover:underline',
           task.needsAttention ? 'text-urgent' : 'text-ink',
         )}
       >
         {task.name}
       </Link>
 
-      {/* Right half — the scheduler. */}
-      <div
-        data-lane-scheduler=""
-        className="relative flex flex-1 basis-0 items-center justify-end"
-      >
+      {/* Scheduler: a small tap zone at rest, so the name keeps the room. */}
+      <div data-lane-scheduler="" className="relative flex shrink-0 items-center justify-end">
         {!canCurate ? (
           current ? (
-            <span
-              title={`${PILL_TITLE[current.key]}`}
-              className={cn(PILL_BASE, current.pillOn)}
-            >
+            <span title={PILL_TITLE[current.key]} className={cn(PILL_BASE, current.pillOn)}>
               {PILL_LETTER[current.key]}
             </span>
           ) : null
-        ) : open ? (
-          <div className="lane-options-in flex items-center gap-1">
-            {justPicked ? (
-              <span
-                role="status"
-                className="absolute -top-6 right-0 z-20 whitespace-nowrap rounded-md bg-ink px-2 py-1 text-[10px] font-medium text-onink shadow-card"
-              >
-                {justPicked.removed
-                  ? `Removed from ${PILL_TITLE[justPicked.lane]}`
-                  : `Added to ${PILL_TITLE[justPicked.lane]} tasks`}
-              </span>
-            ) : (
-              <button
-                type="button"
-                onClick={() => onOpenRow(null)}
-                aria-label="Hide scheduling options"
-                className="grid h-[17px] w-[17px] place-items-center rounded-[5px] text-ink-3 transition-colors hover:text-ink"
-              >
-                <i className="ti ti-chevron-right text-[12px]" aria-hidden="true" />
-              </button>
-            )}
-
-            {COLUMNS.map((col) => {
-              const on = justPicked
-                ? !justPicked.removed && justPicked.lane === col.key
-                : task.lane === col.key;
-              return (
-                <button
-                  key={col.key}
-                  type="button"
-                  disabled={busy}
-                  onClick={() => pick(col.key)}
-                  aria-pressed={on}
-                  title={
-                    task.lane === col.key
-                      ? `Remove from ${PILL_TITLE[col.key]} (and the priority board)`
-                      : `Add to ${PILL_TITLE[col.key]} (also adds to the priority board)`
-                  }
-                  className={cn(
-                    PILL_BASE,
-                    'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary disabled:opacity-50',
-                    on ? col.pillOn : 'bg-line-2 text-ink-3 hover:bg-line hover:text-ink-2',
-                  )}
-                >
-                  {PILL_LETTER[col.key]}
-                </button>
-              );
-            })}
-          </div>
         ) : (
-          <button
-            type="button"
-            onClick={() => onOpenRow(task.id)}
-            aria-label={`Schedule ${task.name}`}
-            aria-expanded={false}
-            className="flex w-full items-center justify-end gap-1.5 py-1 text-ink-3 transition-colors hover:text-ink"
-          >
-            {current ? (
-              <span className={cn(PILL_BASE, current.pillOn)}>{PILL_LETTER[current.key]}</span>
+          <>
+            {/* Stays mounted while open so the row never reflows underneath
+                the floating options. */}
+            <button
+              type="button"
+              onClick={() => onOpenRow(task.id)}
+              aria-label={`Schedule ${task.name}`}
+              aria-expanded={open}
+              tabIndex={open ? -1 : undefined}
+              className="flex items-center gap-1.5 rounded-md px-1 py-1 text-ink-3 transition-colors hover:text-ink"
+            >
+              {current ? (
+                <span className={cn(PILL_BASE, current.pillOn)}>{PILL_LETTER[current.key]}</span>
+              ) : null}
+              <i className="ti ti-clock text-[14px]" aria-hidden="true" />
+            </button>
+
+            {open ? (
+              <div
+                className={cn(
+                  // mr-0.5 keeps the panel a couple of pixels clear of the
+                  // column's right edge, which the slider viewport clips.
+                  'lane-options-in absolute right-0 top-1/2 z-20 mr-0.5 flex -translate-y-1/2 items-center gap-1',
+                  'rounded-lg border border-line bg-panel px-1.5 py-1 shadow-card',
+                )}
+              >
+                {/* Fades the task name out under the options instead of
+                    chopping it at a hard edge. */}
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute right-full top-0 h-full w-8 bg-gradient-to-l from-panel to-transparent"
+                />
+
+                {justPicked ? (
+                  <span
+                    role="status"
+                    className="absolute -top-7 right-0 whitespace-nowrap rounded-md bg-ink px-2 py-1 text-[10px] font-medium text-onink shadow-card"
+                  >
+                    {justPicked.removed
+                      ? `Removed from ${PILL_TITLE[justPicked.lane]}`
+                      : `Added to ${PILL_TITLE[justPicked.lane]} tasks`}
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onOpenRow(null)}
+                    aria-label="Hide scheduling options"
+                    className="grid h-[17px] w-[17px] place-items-center rounded-[5px] text-ink-3 transition-colors hover:text-ink"
+                  >
+                    <i className="ti ti-chevron-right text-[12px]" aria-hidden="true" />
+                  </button>
+                )}
+
+                {COLUMNS.map((col) => {
+                  const on = justPicked
+                    ? !justPicked.removed && justPicked.lane === col.key
+                    : task.lane === col.key;
+                  return (
+                    <button
+                      key={col.key}
+                      type="button"
+                      disabled={busy}
+                      onClick={() => pick(col.key)}
+                      aria-pressed={on}
+                      title={
+                        task.lane === col.key
+                          ? `Remove from ${PILL_TITLE[col.key]} (and the priority board)`
+                          : `Add to ${PILL_TITLE[col.key]} (also adds to the priority board)`
+                      }
+                      className={cn(
+                        PILL_BASE,
+                        'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary disabled:opacity-50',
+                        on ? col.pillOn : 'bg-line-2 text-ink-3 hover:bg-line hover:text-ink-2',
+                      )}
+                    >
+                      {PILL_LETTER[col.key]}
+                    </button>
+                  );
+                })}
+              </div>
             ) : null}
-            <i className="ti ti-clock text-[14px]" aria-hidden="true" />
-          </button>
+          </>
         )}
       </div>
     </li>

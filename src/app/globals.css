@@ -269,10 +269,15 @@ body.sortable-dragging .pb-accordion-body {
   animation: uploadBob 1s ease-in-out infinite;
 }
 /* ============================================================
-   Tasks list — the per-row scheduler. Tapping the right half of a
-   row slides the D / W / F / M options in over the clock icon; they
-   slide back out once a bucket is picked. The global reduced-motion
-   floor below flattens both to an instant swap.
+   Tasks list — the per-row scheduler. Tapping the clock on a row
+   slides the D / W / F / M options in over the task name; they go
+   away again once a bucket is picked. The global reduced-motion
+   floor below flattens this to an instant swap.
+
+   The Y translation is baked into both keyframes because the panel
+   is centred with translateY(-50%): an animation that set only X
+   would drop that half of the transform and jolt the panel
+   downwards for the duration of the slide.
    ============================================================ */
 .lane-options-in {
   animation: laneOptionsIn var(--dur-base) var(--ease-emphasis);
@@ -280,24 +285,11 @@ body.sortable-dragging .pb-accordion-body {
 @keyframes laneOptionsIn {
   from {
     opacity: 0;
-    transform: translateX(10px);
+    transform: translate(10px, -50%);
   }
   to {
     opacity: 1;
-    transform: translateX(0);
-  }
-}
-.lane-options-out {
-  animation: laneOptionsOut var(--dur-fast) var(--ease-standard) forwards;
-}
-@keyframes laneOptionsOut {
-  from {
-    opacity: 1;
-    transform: translateX(0);
-  }
-  to {
-    opacity: 0;
-    transform: translateX(10px);
+    transform: translate(0, -50%);
   }
 }
 
