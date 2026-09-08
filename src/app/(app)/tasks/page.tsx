@@ -12,6 +12,7 @@ import { resolveGroupByDivision } from '@/lib/task-grouping-shared';
 import { fetchTaskCounts, fetchVisibleTasks, getPmuParentDivisionHeadId, type TaskFilter, type TaskSort } from '@/lib/visibility';
 
 import { DivisionControls } from './_components/DivisionControls';
+import { DivisionCardsToggle } from './_components/DivisionCardsToggle';
 import { DivisionLaneBoard, type LaneBoardTask } from './_components/DivisionLaneBoard';
 import { FilterChips } from './_components/FilterChips';
 import { StatsStrip } from './_components/StatsStrip';
@@ -90,7 +91,15 @@ export default async function TasksPage({ searchParams }: PageProps) {
   const groupByDivision =
     canGroupByDivision && resolveGroupByDivision(groupParam, defaultGroupByDivision);
 
-  const [taskResult, counts, divisions, pmuParentHeadId, headedDivisionIds, pmuTeamMemberIds] = await Promise.all([
+  const [
+    taskResult,
+    counts,
+    divisions,
+    pmuParentHeadId,
+    headedDivisionIds,
+    pmuTeamMemberIds,
+    completedResult,
+  ] = await Promise.all([
     fetchVisibleTasks({ callerId: me.id, filter, divisionId: divisionFilter || undefined, sort }),
     fetchTaskCounts(me.id),
     prisma.division.findMany({
@@ -108,6 +117,17 @@ export default async function TasksPage({ searchParams }: PageProps) {
     // A PMU team leader's team (empty otherwise) — same per-card gate, so the
     // leader can act on their team's tasks from the list.
     me.isPmu ? getPmuTeamMemberIds(me.id) : Promise.resolve<string[]>([]),
+    // Completed work, listed after each division's active cards. Only the
+    // grouped view has a per-division place to put it, and the "Completed"
+    // filter already shows it on its own, so this query is skipped otherwise.
+    groupByDivision && filter !== 'completed'
+      ? fetchVisibleTasks({
+          callerId: me.id,
+          filter: 'completed',
+          divisionId: divisionFilter || undefined,
+          sort,
+        })
+      : Promise.resolve(null),
   ]);
 
   // Mobile task-card action permissions. `canSetFortnight` (Add to Priority Board
@@ -132,6 +152,15 @@ export default async function TasksPage({ searchParams }: PageProps) {
   const { tasks, total, capped } = taskResult;
 
   const grouped = groupByDivision ? groupTasksByDivision(tasks) : null;
+  // Completed tasks keyed by division, so each group can list its own after the
+  // active ones. A division whose work is entirely finished has no active tasks
+  // and so forms no group — its completed tasks stay under the Completed filter.
+  const completedByDivision = new Map<string, VisibleTask[]>();
+  for (const t of completedResult?.tasks ?? []) {
+    const list = completedByDivision.get(t.divisionId) ?? [];
+    list.push(t);
+    completedByDivision.set(t.divisionId, list);
+  }
   const segments = groupByDivision
     ? null
     : segmentTasksByRelation(tasks, me.id, me.isPmu, me.pmuId, isExcludedPmuHead);
@@ -227,11 +256,41 @@ export default async function TasksPage({ searchParams }: PageProps) {
                           divisionId: group.divisionId,
                         })}
                       />
-                      <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 md:gap-3">
-                        {group.tasks.map((t) => (
-                          <TaskRow key={t.id} task={t} caller={permCaller} canSetFortnight={canSetFortnight} />
-                        ))}
-                      </ul>
+                      <DivisionCardsToggle
+                        count={group.tasks.length}
+                        completedCount={(completedByDivision.get(group.divisionId) ?? []).length}
+                      >
+                        <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 md:gap-3">
+                          {group.tasks.map((t) => (
+                            <TaskRow key={t.id} task={t} caller={permCaller} canSetFortnight={canSetFortnight} />
+                          ))}
+                        </ul>
+
+                        {(completedByDivision.get(group.divisionId) ?? []).length > 0 ? (
+                          <>
+                            <h5 className="section-label mt-4 mb-2 flex items-center gap-1.5">
+                              <i
+                                className="ti ti-circle-check text-[13px] text-success"
+                                aria-hidden="true"
+                              />
+                              Completed
+                              <span className="font-normal normal-case tracking-normal text-ink-3">
+                                {(completedByDivision.get(group.divisionId) ?? []).length}
+                              </span>
+                            </h5>
+                            <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 md:gap-3 opacity-75">
+                              {(completedByDivision.get(group.divisionId) ?? []).map((t) => (
+                                <TaskRow
+                                  key={t.id}
+                                  task={t}
+                                  caller={permCaller}
+                                  canSetFortnight={canSetFortnight}
+                                />
+                              ))}
+                            </ul>
+                          </>
+                        ) : null}
+                      </DivisionCardsToggle>
                     </GroupedDivisionAccordion>
                   ))}
                 </div>

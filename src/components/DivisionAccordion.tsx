@@ -50,7 +50,18 @@ export function DivisionAccordion({
   const bodyId = useId();
 
   return (
-    <section className="relative overflow-hidden rounded-xl border border-line bg-panel shadow-card">
+    <section
+      className="relative overflow-hidden rounded-xl border border-line bg-panel shadow-card"
+      // A whisper of the division's own colour, so a long scroll through
+      // several divisions never leaves you unsure which one you are reading.
+      // Mixed into --panel rather than laid over it as translucency, so it
+      // stays opaque and re-mixes correctly against the dark theme's panel.
+      style={
+        colour
+          ? { backgroundColor: `color-mix(in srgb, ${colour} 5%, var(--panel))` }
+          : undefined
+      }
+    >
       {colour ? (
         <span
           aria-hidden="true"
@@ -65,7 +76,9 @@ export function DivisionAccordion({
         aria-expanded={open}
         aria-controls={bodyId}
         className={cn(
-          'w-full flex items-center gap-2.5 py-3 pr-3 text-left transition-colors hover:bg-bg',
+          // Darken on hover instead of painting --bg over the tint, which
+          // would make the panel look like it loses its colour.
+          'w-full flex items-center gap-2.5 py-3 pr-3 text-left transition-colors hover:bg-ink/[0.03]',
           colour ? 'pl-4' : 'pl-3.5',
         )}
       >
