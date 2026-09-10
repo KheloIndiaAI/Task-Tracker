@@ -22,7 +22,13 @@ import { randomUUID } from 'crypto';
 
 let cachedClient: S3Client | null = null;
 
-const UPLOAD_TTL_SECONDS = 15 * 60; // browser PUT must complete within 15 min
+// The browser's PUT must finish inside this window. Sized from the upload cap,
+// not picked round: 15 minutes was ample for the old 100 MB cap (~0.9 Mbps) but
+// would demand ~9.1 Mbps sustained UPLOAD for a 1 GB file, which asymmetric
+// office broadband rarely holds. An hour covers 1 GB at ~2.3 Mbps, so a large
+// file on a slow link finishes instead of dying at the 15-minute mark with the
+// transfer nearly done. Still far short of SigV4's 7-day ceiling.
+const UPLOAD_TTL_SECONDS = 60 * 60;
 const DEFAULT_DOWNLOAD_TTL = 3600; // 1 hour
 const SHARE_TTL_SECONDS = 4 * 60 * 60; // 4h for WhatsApp-shared links
 
@@ -195,7 +201,17 @@ export function formatBytes(bytes: number | bigint | null | undefined): string {
   const n = typeof bytes === 'bigint' ? Number(bytes) : bytes;
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  // Without this tier the 1 GB cap renders as "1024.0 MB" in every
+  // over-size message.
+  return `${(n / 1024 / 1024 / 1024).toFixed(1)} GB`;
 }
 
-export const MAX_UPLOAD_BYTES = 100 * 1024 * 1024; // 100 MB hard cap
+/**
+ * Hard cap on a single upload, enforced in three places: the client pickers,
+ * the presign route's schema, and the register action's schema. The presigned
+ * PUT is signed with this exact ContentLength, so S3 rejects a body that does
+ * not match what was declared — the cap cannot be talked past by lying to the
+ * client.
+ */
+export const MAX_UPLOAD_BYTES = 1024 * 1024 * 1024; // 1 GB hard cap

@@ -21,7 +21,7 @@ import {
   INITIAL_CREATE_STATE,
   type CreateTaskState,
 } from '@/app/actions/states';
-import { MAX_UPLOAD_BYTES } from '@/lib/s3';
+import { formatBytes, MAX_UPLOAD_BYTES } from '@/lib/s3';
 import { cn } from '@/lib/utils';
 
 // ------------------------------------------------------------
@@ -175,12 +175,6 @@ const VISIBILITIES = [
   { value: 'division', label: 'Division', icon: 'ti-users' },
   { value: 'personal', label: 'Personal', icon: 'ti-lock' },
 ] as const;
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 function QuickCreateForm({
   onSuccess,
