@@ -20,21 +20,43 @@ type ReportGenerationDialogProps = {
  * downloads the file and stays on this page; no blob/object-URL handling
  * needed, and the session cookie rides along automatically since this is a
  * same-origin top-level GET.
+ *
+ * Division and Priority are both multi-select — leaving every checkbox/pill
+ * off means "no filter" (all divisions / all priorities), matching the
+ * standard faceted-filter convention, not "select none of them".
  */
 export function ReportGenerationDialog({ divisions }: ReportGenerationDialogProps) {
   const [open, setOpen] = useState(false);
-  const [divisionId, setDivisionId] = useState('');
-  const [cadence, setCadence] = useState<ReportCadence | ''>('');
+  const [divisionIds, setDivisionIds] = useState<Set<string>>(new Set());
+  const [priorities, setPriorities] = useState<Set<ReportCadence>>(new Set());
   const [scope, setScope] = useState<'scheduled' | 'all'>('scheduled');
   const [includeStatus, setIncludeStatus] = useState(false);
   const [includeJsComment, setIncludeJsComment] = useState(false);
 
   const layout = includeStatus || includeJsComment ? 'detailed' : 'compact';
 
+  const toggleDivision = (id: string) => {
+    setDivisionIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const togglePriority = (p: ReportCadence) => {
+    setPriorities((prev) => {
+      const next = new Set(prev);
+      if (next.has(p)) next.delete(p);
+      else next.add(p);
+      return next;
+    });
+  };
+
   const onGenerate = () => {
     const params = new URLSearchParams();
-    if (divisionId) params.set('division', divisionId);
-    if (cadence) params.set('cadence', cadence);
+    if (divisionIds.size > 0) params.set('division', [...divisionIds].join(','));
+    if (priorities.size > 0) params.set('priority', [...priorities].join(','));
     if (scope !== 'scheduled') params.set('scope', scope);
     if (includeStatus) params.set('status', '1');
     if (includeJsComment) params.set('jsComment', '1');
@@ -63,34 +85,51 @@ export function ReportGenerationDialog({ divisions }: ReportGenerationDialogProp
         size="sm"
       >
         <div className="flex flex-col gap-4">
-          <Field label="Division">
-            <select
-              value={divisionId}
-              onChange={(e) => setDivisionId(e.target.value)}
-              className={selectCn}
-            >
-              <option value="">All divisions</option>
-              {divisions.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
+          <Field label="Division" hint="Leave every box unchecked for all divisions.">
+            {divisions.length === 0 ? (
+              <p className="text-[11px] text-ink-3">No divisions available.</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 max-h-[180px] overflow-y-auto pr-1">
+                {divisions.map((d) => (
+                  <label
+                    key={d.id}
+                    className="flex items-center gap-2 text-[12.5px] text-ink cursor-pointer py-0.5"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={divisionIds.has(d.id)}
+                      onChange={() => toggleDivision(d.id)}
+                      className="h-3.5 w-3.5 rounded border-line accent-ink shrink-0"
+                    />
+                    <span className="truncate">{d.name}</span>
+                  </label>
+                ))}
+              </div>
+            )}
           </Field>
 
-          <Field label="Cadence">
-            <select
-              value={cadence}
-              onChange={(e) => setCadence(e.target.value as ReportCadence | '')}
-              className={selectCn}
-            >
-              <option value="">All cadences</option>
-              {REPORT_CADENCES.map((c) => (
-                <option key={c} value={c}>
-                  {REPORT_CADENCE_LABEL[c]}
-                </option>
-              ))}
-            </select>
+          <Field label="Priority" hint="Leave every pill off for all priorities.">
+            <div className="flex flex-wrap gap-1.5">
+              {REPORT_CADENCES.map((c) => {
+                const active = priorities.has(c);
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => togglePriority(c)}
+                    aria-pressed={active}
+                    className={cn(
+                      'px-3 py-1.5 rounded-full border text-[12px] font-medium transition-colors',
+                      active
+                        ? 'bg-ink text-onink border-ink'
+                        : 'bg-panel text-ink-2 border-line hover:border-ink-4',
+                    )}
+                  >
+                    {REPORT_CADENCE_LABEL[c]}
+                  </button>
+                );
+              })}
+            </div>
           </Field>
 
           <Field label="Scope">
@@ -133,7 +172,7 @@ export function ReportGenerationDialog({ divisions }: ReportGenerationDialogProp
             <p className="text-[11px] text-ink-3 leading-relaxed">
               {layout === 'detailed'
                 ? 'One row per task, with the columns checked above.'
-                : 'Neither checked — a compact grid of task names by division and cadence.'}
+                : 'Neither checked — a compact grid of task names by division and priority.'}
             </p>
           </div>
 
@@ -151,15 +190,21 @@ export function ReportGenerationDialog({ divisions }: ReportGenerationDialogProp
   );
 }
 
-const selectCn =
-  'w-full px-3 py-2 rounded-lg border border-line bg-panel text-[13px] text-ink outline-none transition-colors appearance-none focus:border-ink';
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <label className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-1.5">
       <span className="text-[11px] font-medium text-ink-2">{label}</span>
       {children}
-    </label>
+      {hint ? <span className="text-[10.5px] text-ink-3">{hint}</span> : null}
+    </div>
   );
 }
 

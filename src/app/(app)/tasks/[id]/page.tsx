@@ -32,6 +32,7 @@ import { SectionActivity } from './_components/SectionActivity';
 import { SectionComments, type Mentionable } from './_components/SectionComments';
 import { SectionContext } from './_components/SectionContext';
 import { SectionDetails } from './_components/SectionDetails';
+import { SectionJsComment } from './_components/SectionJsComment';
 import { SectionLatestStatus } from './_components/SectionLatestStatus';
 import { SectionSubtasks, type SubtaskDocument } from './_components/SectionSubtasks';
 import { StatusPicker } from './_components/StatusPicker';
@@ -98,7 +99,16 @@ export default async function TaskDetailPage({ params }: PageProps) {
   // Visibility guard — reuses the same scoper as the tasks list page.
   const me = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { id: true, hierarchySlot: true, isSuperAdmin: true, divisionId: true, isPmu: true, pmuId: true, pmuRole: true },
+    select: {
+      id: true,
+      hierarchySlot: true,
+      isSuperAdmin: true,
+      divisionId: true,
+      isPmu: true,
+      pmuId: true,
+      pmuRole: true,
+      canAddJsComment: true,
+    },
   });
   if (!me) redirect('/login');
 
@@ -239,6 +249,10 @@ export default async function TaskDetailPage({ params }: PageProps) {
     },
   );
   const canEditFields = canManage;
+
+  // JS Comment is JS-office commentary, not a contribution — Super Admin or
+  // the can_add_js_comment grant only, unrelated to canEditFields/isContributor.
+  const canEditJsComment = me.isSuperAdmin || me.canAddJsComment;
 
   // Redefining the task — name, due date, recurrence — is stricter: a normal
   // owner (e.g. after a transfer) cannot. Mirrors canEditTaskDetails on the
@@ -691,6 +705,12 @@ export default async function TaskDetailPage({ params }: PageProps) {
           Last edited {formatDistanceToNow(task.updatedAt, { addSuffix: true })}
         </p>
       </section>
+
+      <SectionJsComment
+        taskId={task.id}
+        jsComment={task.jsComment}
+        canEdit={canEditJsComment}
+      />
 
       <SectionLatestStatus
         taskId={task.id}

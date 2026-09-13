@@ -8,13 +8,20 @@ import { REPORT_CADENCES, type ReportCadence } from '@/lib/reports-shared';
 export type ReportScope = 'scheduled' | 'all';
 
 export type ReportFilters = {
-  /** null = every division the caller can see. */
-  divisionId: string | null;
-  /** null = all four cadences. */
-  cadence: ReportCadence | null;
+  /** Empty = every division the caller can see. */
+  divisionIds: string[];
+  /**
+   * Empty = every priority. Choosing one or more here is a precise filter —
+   * it already implies "scheduled with this priority", so it overrides
+   * `scope` (there is no such thing as an unscheduled task that also carries
+   * a priority). `scope` only governs whether unscheduled tasks are included
+   * when NO priority is chosen.
+   */
+  priorities: ReportCadence[];
   /** 'scheduled' = only tasks carrying a JS Priority lane; 'all' = every
    *  matching task, with unscheduled ones grouped under a "Not scheduled"
-   *  cadence of their own (cadence: null on the row). */
+   *  priority of their own (cadence: null on the row). Ignored once
+   *  `priorities` is non-empty. */
   scope: ReportScope;
   includeStatus: boolean;
   includeJsComment: boolean;
@@ -52,8 +59,8 @@ function divisionGroupRank(kind: string, name: string): number {
  * task the caller could not otherwise see, regardless of which of the three
  * grants (Super Admin / OSD, division head, or the explicit
  * can_generate_reports flag) let them open the report dialog in the first
- * place. "Division: All" in the filter dialog therefore means "every
- * division this caller can see", not the whole ministry for a
+ * place. Leaving Division unchecked in the filter dialog therefore means
+ * "every division this caller can see", not the whole ministry for a
  * non-leadership grant-holder.
  *
  * Grouping and division ordering mirror groupTasksByDivision in
@@ -66,6 +73,15 @@ export async function fetchReportDivisionGroups(
 ): Promise<ReportDivisionGroup[]> {
   const visibilityClauses = await buildVisibilityClauses(me);
 
+  // One or more chosen priorities narrows to exactly those lanes; otherwise
+  // `scope` decides whether unscheduled tasks (a null lane) are in play.
+  const laneCondition: Prisma.TaskWhereInput['jsPriorityLane'] | undefined =
+    filters.priorities.length > 0
+      ? { in: filters.priorities }
+      : filters.scope === 'scheduled'
+        ? { not: null }
+        : undefined;
+
   const where: Prisma.TaskWhereInput = {
     archivedAt: null,
     parentTaskId: null,
@@ -73,9 +89,8 @@ export async function fetchReportDivisionGroups(
     // about ongoing work, not a record of what is already finished.
     status: { not: 'completed' },
     OR: visibilityClauses,
-    ...(filters.divisionId ? { divisionId: filters.divisionId } : {}),
-    ...(filters.scope === 'scheduled' ? { jsPriorityLane: { not: null } } : {}),
-    ...(filters.cadence ? { jsPriorityLane: filters.cadence } : {}),
+    ...(filters.divisionIds.length > 0 ? { divisionId: { in: filters.divisionIds } } : {}),
+    ...(laneCondition ? { jsPriorityLane: laneCondition } : {}),
   };
 
   const tasks = await prisma.task.findMany({

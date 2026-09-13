@@ -42,5 +42,10 @@ COPY --from=build /app/public ./public
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/next.config.mjs ./next.config.mjs
 COPY --from=build /app/prisma ./prisma
+# The Priority Task Report reads these Manrope files off disk at request time
+# (@react-pdf/renderer needs real WOFF/TTF, not a browser <link>) — without
+# this line the runner has no `src/`, renderToBuffer fails, and every report
+# request 500s in production despite `next build` succeeding.
+COPY --from=build /app/src/lib/pdf/fonts ./src/lib/pdf/fonts
 EXPOSE 3000
 CMD ["pnpm","start"]

@@ -9,12 +9,13 @@ import { REPORT_COLOURS, divisionWash } from './colors';
  * chosen by the caller (the route handler) from the "Status include" /
  * "JS Comment include" checkboxes in the filter dialog:
  *
- *   - 'detailed' — one row per task: Division · Cadence · Task · (Status) ·
+ *   - 'detailed' — one row per task: Division · Priority · Task · (Status) ·
  *     (JS Comment). Picked the moment either checkbox is on, since those
  *     columns only make sense next to their own task.
  *   - 'compact'  — one row per division, tasks bucketed into Daily / Weekly /
  *     Fortnightly / Monthly (+ Not scheduled, when the scope is "All tasks")
- *     columns as numbered name lists. The default when neither checkbox is
+ *     columns as numbered name lists, narrowed to just the chosen priorities
+ *     when one or more are selected. The default when neither checkbox is
  *     on — the crisp, at-a-glance view.
  *
  * Column headers and the filter summary print once, at the top — not
@@ -29,10 +30,12 @@ import { REPORT_COLOURS, divisionWash } from './colors';
 export type PriorityTaskReportProps = {
   groups: ReportDivisionGroup[];
   layout: 'detailed' | 'compact';
+  /** Empty = every priority — the compact grid then shows all four columns. */
+  selectedPriorities: ReportCadence[];
   /** Whether "Not scheduled" tasks are in scope — adds the 5th compact column. */
   includeUnscheduled: boolean;
   divisionLabel: string;
-  cadenceLabel: string;
+  priorityLabel: string;
   scopeLabel: string;
   includeStatus: boolean;
   includeJsComment: boolean;
@@ -129,9 +132,10 @@ const styles = StyleSheet.create({
 export function PriorityTaskReportDocument({
   groups,
   layout,
+  selectedPriorities,
   includeUnscheduled,
   divisionLabel,
-  cadenceLabel,
+  priorityLabel,
   scopeLabel,
   includeStatus,
   includeJsComment,
@@ -144,7 +148,7 @@ export function PriorityTaskReportDocument({
       <Page size="A4" style={styles.page} wrap>
         <Text style={styles.title}>Priority Task Report</Text>
         <Text style={styles.summaryLine}>
-          Division: {divisionLabel}  ·  Cadence: {cadenceLabel}  ·  Scope: {scopeLabel}
+          Division: {divisionLabel}  ·  Priority: {priorityLabel}  ·  Scope: {scopeLabel}
         </Text>
         <Text style={styles.metaLine}>
           Generated {generatedAtLabel}  ·  {totalTasks} {totalTasks === 1 ? 'task' : 'tasks'} across{' '}
@@ -157,7 +161,11 @@ export function PriorityTaskReportDocument({
         ) : layout === 'detailed' ? (
           <DetailedTable groups={groups} includeStatus={includeStatus} includeJsComment={includeJsComment} />
         ) : (
-          <CompactGrid groups={groups} includeUnscheduled={includeUnscheduled} />
+          <CompactGrid
+            groups={groups}
+            selectedPriorities={selectedPriorities}
+            includeUnscheduled={includeUnscheduled}
+          />
         )}
 
         <View style={styles.footer} fixed>
@@ -203,7 +211,7 @@ function DetailedTable({
       <View style={styles.colHeadRow}>
         <View style={{ width: 10 }} />
         <Text style={[styles.colHead, { flex: 1.3 }]}>DIVISION</Text>
-        <Text style={[styles.colHead, { flex: 0.85 }]}>CADENCE</Text>
+        <Text style={[styles.colHead, { flex: 0.85 }]}>PRIORITY</Text>
         <Text style={[styles.colHead, { flex: 2.6 }]}>TASK</Text>
         {includeStatus ? <Text style={[styles.colHead, { flex: 1.6 }]}>STATUS</Text> : null}
         {includeJsComment ? <Text style={[styles.colHead, { flex: 1.6 }]}>JS COMMENT</Text> : null}
@@ -239,8 +247,9 @@ function DetailedTable({
 
 type GridColumn = { key: ReportCadence | 'unscheduled'; label: string };
 
-function gridColumns(includeUnscheduled: boolean): GridColumn[] {
-  const cols: GridColumn[] = REPORT_CADENCES.map((c) => ({ key: c, label: REPORT_CADENCE_LABEL[c] }));
+function gridColumns(selectedPriorities: ReportCadence[], includeUnscheduled: boolean): GridColumn[] {
+  const priorities = selectedPriorities.length > 0 ? selectedPriorities : REPORT_CADENCES;
+  const cols: GridColumn[] = priorities.map((c) => ({ key: c, label: REPORT_CADENCE_LABEL[c] }));
   if (includeUnscheduled) cols.push({ key: 'unscheduled', label: 'Not scheduled' });
   return cols;
 }
@@ -253,12 +262,14 @@ function tasksForColumn(tasks: ReportTask[], key: GridColumn['key']): ReportTask
 
 function CompactGrid({
   groups,
+  selectedPriorities,
   includeUnscheduled,
 }: {
   groups: ReportDivisionGroup[];
+  selectedPriorities: ReportCadence[];
   includeUnscheduled: boolean;
 }) {
-  const columns = gridColumns(includeUnscheduled);
+  const columns = gridColumns(selectedPriorities, includeUnscheduled);
 
   return (
     <View>
