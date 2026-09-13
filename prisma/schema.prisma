@@ -235,6 +235,11 @@ model User {
   // this has no seeded backfill; Super Admin always has the right regardless
   // of this flag, so it only ever widens who ELSE can add it.
   canAddJsComment     Boolean   @default(false) @map("can_add_js_comment")
+  // Super-Admin-managed grant to generate the Priority Task Report PDF from
+  // /tasks. Super Admin, OSD, and any division head already have this by
+  // role (see canAccessReportGeneration in src/lib/reports-shared.ts) — this
+  // flag only ever widens who ELSE can, same shape as can_add_js_comment.
+  canGenerateReports  Boolean   @default(false) @map("can_generate_reports")
   // Opt-out toggle for WhatsApp notifications (default on; user-editable on /profile).
   whatsappOptIn       Boolean   @default(true) @map("whatsapp_opt_in")
   forcePasswordChange Boolean   @default(false) @map("force_password_change")

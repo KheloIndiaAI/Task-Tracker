@@ -10,12 +10,14 @@ import { canManageTask, canSetJsPriorityLane, getHeadedDivisionIds } from '@/lib
 import { getPmuTeamMemberIds } from '@/lib/pmu-team';
 import { getContributorTaskIds } from '@/lib/task-participants';
 import { resolveGroupByDivision } from '@/lib/task-grouping-shared';
+import { canAccessReportGeneration } from '@/lib/reports-shared';
 import { fetchTaskCounts, fetchVisibleTasks, getPmuParentDivisionHeadId, type TaskFilter, type TaskSort } from '@/lib/visibility';
 
 import { DivisionControls } from './_components/DivisionControls';
 import { DivisionCardsToggle } from './_components/DivisionCardsToggle';
 import { DivisionLaneBoard, type LaneBoardTask } from './_components/DivisionLaneBoard';
 import { FilterChips } from './_components/FilterChips';
+import { ReportGenerationDialog } from './_components/ReportGenerationDialog';
 import { StatsStrip } from './_components/StatsStrip';
 import { TaskListItem } from './_components/TaskListItem';
 import { TaskGroupStateProvider, GroupedDivisionAccordion } from './_components/TaskListState';
@@ -65,6 +67,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
       isPmu: true,
       pmuId: true,
       canAddJsComment: true,
+      canGenerateReports: true,
       divisionAccess: { select: { divisionId: true } },
     },
   });
@@ -141,6 +144,9 @@ export default async function TasksPage({ searchParams }: PageProps) {
   // Admin, or a user carrying the can_add_js_comment grant — see
   // updateTaskJsCommentAction. Unrelated to task contribution rights below.
   const canEditJsComment = me.isSuperAdmin || me.canAddJsComment;
+  // Super Admin, OSD, and any division head always have this; canGenerateReports
+  // only ever widens it further — see canAccessReportGeneration's doc comment.
+  const canAccessReports = canAccessReportGeneration(me, headedDivisionIds);
   const permCaller = {
     id: me.id,
     isSuperAdmin: me.isSuperAdmin,
@@ -206,8 +212,11 @@ export default async function TasksPage({ searchParams }: PageProps) {
                 Active tasks
               </h1>
             </div>
-            <div className="hidden md:block">
-              <QuickCreatePrimary />
+            <div className="flex items-center gap-2">
+              {canAccessReports ? <ReportGenerationDialog divisions={divisions} /> : null}
+              <div className="hidden md:block">
+                <QuickCreatePrimary />
+              </div>
             </div>
           </div>
 

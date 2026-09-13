@@ -49,6 +49,7 @@ export type UserFormDefaults = {
   canAccessBusinessCards?: boolean;
   canSeePersonalTasks?: boolean;
   canAddJsComment?: boolean;
+  canGenerateReports?: boolean;
 };
 
 type UserFormFieldsProps = {
@@ -294,6 +295,23 @@ export function UserFormFields({
             name="canAddJsComment"
             defaultChecked={defaults?.canAddJsComment}
             ariaLabel="Grant JS Comment access"
+          />
+        </label>
+        <label className="mt-2 flex items-start justify-between gap-3 px-3 py-2.5 rounded-lg border border-line">
+          <span className="min-w-0">
+            <span className="inline-flex items-center gap-2 text-[12px] text-ink">
+              <i className="ti ti-report text-[14px] text-primary" aria-hidden="true" />
+              Report generation access
+            </span>
+            <span className="mt-0.5 block text-[11px] text-ink-3">
+              Lets this user generate the Priority Task Report PDF from the
+              tasks homepage. Super Admin, OSD, and division heads always can.
+            </span>
+          </span>
+          <Switch
+            name="canGenerateReports"
+            defaultChecked={defaults?.canGenerateReports}
+            ariaLabel="Grant report generation access"
           />
         </label>
       </Section>

@@ -242,6 +242,10 @@ const createUserSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'on'),
+  canGenerateReports: z
+    .string()
+    .optional()
+    .transform((v) => v === 'on'),
   // phone + work activities are self-service on /profile — the admin form
   // never collects them, so they are intentionally absent here.
 });
@@ -276,6 +280,7 @@ export async function createUserAction(
     canAccessBusinessCards: formData.get('canAccessBusinessCards'),
     canSeePersonalTasks: formData.get('canSeePersonalTasks'),
     canAddJsComment: formData.get('canAddJsComment'),
+    canGenerateReports: formData.get('canGenerateReports'),
   });
   if (!parsed.success) {
     const fieldErrors: Record<string, string> = {};
@@ -337,6 +342,7 @@ export async function createUserAction(
           canAccessBusinessCards: parsed.data.canAccessBusinessCards ?? false,
           canSeePersonalTasks: parsed.data.canSeePersonalTasks ?? false,
           canAddJsComment: parsed.data.canAddJsComment ?? false,
+          canGenerateReports: parsed.data.canGenerateReports ?? false,
           forcePasswordChange: parsed.data.forcePasswordChange ?? true,
           createdById: guard.userId,
         },
@@ -364,6 +370,7 @@ export async function createUserAction(
       canAccessBusinessCards: created.canAccessBusinessCards,
       canSeePersonalTasks: created.canSeePersonalTasks,
       canAddJsComment: created.canAddJsComment,
+      canGenerateReports: created.canGenerateReports,
     });
 
     revalidateAll();
@@ -413,6 +420,10 @@ const updateUserSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'on'),
+  canGenerateReports: z
+    .string()
+    .optional()
+    .transform((v) => v === 'on'),
   // phone + work activities are self-service on /profile — the admin form
   // never collects them, so they are intentionally absent here (and must
   // never be written from this action, which would wipe self-set values).
@@ -443,6 +454,7 @@ export async function updateUserAction(
     canAccessBusinessCards: formData.get('canAccessBusinessCards'),
     canSeePersonalTasks: formData.get('canSeePersonalTasks'),
     canAddJsComment: formData.get('canAddJsComment'),
+    canGenerateReports: formData.get('canGenerateReports'),
   });
   if (!parsed.success) {
     const fieldErrors: Record<string, string> = {};
@@ -470,6 +482,7 @@ export async function updateUserAction(
       canAccessBusinessCards: true,
       canSeePersonalTasks: true,
       canAddJsComment: true,
+      canGenerateReports: true,
     },
   });
   if (!before) return fail('User not found.', epoch);
@@ -551,6 +564,7 @@ export async function updateUserAction(
           canAccessBusinessCards: parsed.data.canAccessBusinessCards,
           canSeePersonalTasks: parsed.data.canSeePersonalTasks,
           canAddJsComment: parsed.data.canAddJsComment,
+          canGenerateReports: parsed.data.canGenerateReports,
         },
       });
       if (extraToRemove.length > 0) {
@@ -587,6 +601,7 @@ export async function updateUserAction(
       canAccessBusinessCards: updated.canAccessBusinessCards,
       canSeePersonalTasks: updated.canSeePersonalTasks,
       canAddJsComment: updated.canAddJsComment,
+      canGenerateReports: updated.canGenerateReports,
     });
 
     // Granting or revoking Super Admin is security-sensitive — leave a
@@ -647,6 +662,18 @@ export async function updateUserAction(
         updated.id,
         { canAddJsComment: before.canAddJsComment },
         { canAddJsComment: updated.canAddJsComment },
+      );
+    }
+
+    // Report generation is a distinct capability grant (Super Admin, OSD, and
+    // division heads already have it by role) — its own audit entry too.
+    if (before.canGenerateReports !== updated.canGenerateReports) {
+      await audit(
+        guard.userId,
+        'role_change',
+        updated.id,
+        { canGenerateReports: before.canGenerateReports },
+        { canGenerateReports: updated.canGenerateReports },
       );
     }
 
