@@ -9,22 +9,39 @@ import { REPORT_COLOURS, divisionWash } from './colors';
  * chosen by the caller (the route handler) from the "Status include" /
  * "JS Comment include" checkboxes in the filter dialog:
  *
- *   - 'detailed' — one row per task: Division · Priority · Task · (Status) ·
- *     (JS Comment). Picked the moment either checkbox is on, since those
- *     columns only make sense next to their own task.
+ *   - 'detailed' — grouped visually by division then priority: the division
+ *     name and each priority label print once, as a heading above the rows
+ *     they cover, instead of repeating on every row. Picked the moment
+ *     either checkbox is on, since Status/JS Comment only make sense next
+ *     to their own task.
  *   - 'compact'  — one row per division, tasks bucketed into Daily / Weekly /
- *     Fortnightly / Monthly (+ Not scheduled, when the scope is "All tasks")
- *     columns as numbered name lists, narrowed to just the chosen priorities
- *     when one or more are selected. The default when neither checkbox is
- *     on — the crisp, at-a-glance view.
+ *     Fortnightly / Monthly columns as numbered name lists, narrowed to just
+ *     the chosen priorities when one or more are selected. The default when
+ *     neither checkbox is on — the crisp, at-a-glance view.
  *
- * Column headers and the filter summary print once, at the top — not
- * repeated per page. @react-pdf/renderer's `fixed` elements replay at the
- * Y-offset they first occupied on page 1, so a fixed header placed after a
- * one-time hero block leaves a blank gap of that same height on every later
- * page. A single header plus a fixed page-number footer (which anchors to
- * the page bottom, independent of flow) avoids that without the complexity
- * of a hand-rolled repeating-header workaround.
+ * The division/priority headings deliberately do NOT use a stretched
+ * side-rail cell (a cell whose height is derived from a sibling subtree of
+ * unbounded, paginating rows) — an earlier version did, and it made
+ * @react-pdf/renderer's layout pass hang on a division with real-world scale
+ * (50+ tasks): the side-rail's height depends on its sibling's paginated
+ * height, and the sibling's pagination in turn depends on the side-rail —
+ * exactly the kind of circular flex constraint Yoga struggles with. A
+ * heading printed once above naturally-flowing rows needs no such
+ * dependency, and the coloured left border + wash on the surrounding
+ * section still carries the division's colour onto every page it spans.
+ *
+ * Unscheduled tasks (scope "All tasks", no lane) never share either layout's
+ * main table/grid — mixing them in as a "Not scheduled" row or column reads
+ * as clutter next to the real priorities. Instead, when there are any, they
+ * print in their own division-grouped section starting on a fresh page.
+ *
+ * Column headers and the page title print once, at the top of each
+ * section — not repeated per page. @react-pdf/renderer's `fixed` elements
+ * replay at the Y-offset they first occupied on the page they start on, so a
+ * fixed header placed after a one-time hero block leaves a blank gap of that
+ * same height on every later page. A single header plus a fixed page-number
+ * footer (which anchors to the page bottom, independent of flow) avoids that
+ * without the complexity of a hand-rolled repeating-header workaround.
  */
 
 export type PriorityTaskReportProps = {
@@ -32,7 +49,7 @@ export type PriorityTaskReportProps = {
   layout: 'detailed' | 'compact';
   /** Empty = every priority — the compact grid then shows all four columns. */
   selectedPriorities: ReportCadence[];
-  /** Whether "Not scheduled" tasks are in scope — adds the 5th compact column. */
+  /** Whether unscheduled tasks are in scope — they get their own page, grouped by division, when true. */
   includeUnscheduled: boolean;
   includeStatus: boolean;
   includeJsComment: boolean;
@@ -41,6 +58,7 @@ export type PriorityTaskReportProps = {
 };
 
 const C = REPORT_COLOURS;
+const DIVISION_WASH_ALPHA = 0.12;
 
 const styles = StyleSheet.create({
   page: {
@@ -52,6 +70,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.page,
   },
   title: { fontSize: 19, fontWeight: 700, color: C.ink },
+  sectionTitle: { fontSize: 14, fontWeight: 700, color: C.ink, marginBottom: 10 },
   metaLine: { fontSize: 8, color: C.ink3, marginTop: 5 },
   headerRule: {
     borderBottomWidth: 1.5,
@@ -84,26 +103,25 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // ---- Detailed table ----
-  colHeadRow: {
-    flexDirection: 'row',
-    paddingBottom: 5,
+  // ---- Detailed table (and Not-scheduled detailed section) ----
+  colHeadRow: { flexDirection: 'row', paddingBottom: 5, paddingLeft: 11 },
+  colHead: { fontSize: 7.5, fontWeight: 600, color: C.ink3, letterSpacing: 0.5 },
+  divisionSection: {
+    borderLeftWidth: 3,
+    paddingLeft: 8,
+    paddingVertical: 8,
+    marginBottom: 6,
   },
-  colHead: {
+  divisionHeading: { fontSize: 11, fontWeight: 700, color: C.ink },
+  priorityHeading: {
     fontSize: 7.5,
     fontWeight: 600,
     color: C.ink3,
     letterSpacing: 0.5,
+    marginTop: 7,
+    marginBottom: 2,
   },
-  detailRow: {
-    flexDirection: 'row',
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: C.line2,
-  },
-  strip: { width: 3, marginRight: 7, borderRadius: 1.5 },
-  cellDivision: { flex: 0.9, fontSize: 9, fontWeight: 500, color: C.ink, paddingRight: 6 },
-  cellCadence: { flex: 0.85, fontSize: 8.5, color: C.ink2, paddingRight: 6 },
+  taskRow: { flexDirection: 'row', paddingVertical: 4, alignItems: 'flex-start' },
   cellTask: { flex: 3, fontSize: 9, color: C.ink, paddingRight: 6 },
   cellText: { flex: 1.6, fontSize: 8.5, color: C.ink2, paddingRight: 6 },
 
@@ -118,11 +136,22 @@ const styles = StyleSheet.create({
     borderBottomColor: C.line2,
   },
   gridDivisionCell: { flex: 1.1, flexDirection: 'row', alignItems: 'flex-start' },
+  gridStrip: { width: 3, marginRight: 7, borderRadius: 1.5 },
   gridDivisionName: { fontSize: 9.5, fontWeight: 600, color: C.ink },
   gridDivisionCount: { fontSize: 7.5, color: C.ink3, marginTop: 2 },
   gridCell: { flex: 1, paddingLeft: 8 },
   gridCellEmpty: { fontSize: 8.5, color: C.ink3 },
   gridItem: { fontSize: 8.5, color: C.ink, marginBottom: 3 },
+
+  // ---- Not-scheduled (compact) ----
+  notSchedRow: {
+    flexDirection: 'row',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: C.line2,
+  },
+  notSchedDivisionCell: { width: 130, flexDirection: 'row', alignItems: 'flex-start' },
+  notSchedList: { flex: 1, paddingLeft: 8 },
 });
 
 export function PriorityTaskReportDocument({
@@ -135,6 +164,11 @@ export function PriorityTaskReportDocument({
   generatedAtLabel,
 }: PriorityTaskReportProps) {
   const totalTasks = groups.reduce((n, g) => n + g.tasks.length, 0);
+  const unscheduledGroups = includeUnscheduled
+    ? groups
+        .map((g) => ({ ...g, tasks: g.tasks.filter((t) => t.cadence === null) }))
+        .filter((g) => g.tasks.length > 0)
+    : [];
 
   return (
     <Document title="Priority Task Report">
@@ -148,12 +182,23 @@ export function PriorityTaskReportDocument({
         ) : layout === 'detailed' ? (
           <DetailedTable groups={groups} includeStatus={includeStatus} includeJsComment={includeJsComment} />
         ) : (
-          <CompactGrid
-            groups={groups}
-            selectedPriorities={selectedPriorities}
-            includeUnscheduled={includeUnscheduled}
-          />
+          <CompactGrid groups={groups} selectedPriorities={selectedPriorities} />
         )}
+
+        {unscheduledGroups.length > 0 ? (
+          <View break>
+            <Text style={styles.sectionTitle}>Not scheduled tasks</Text>
+            {layout === 'detailed' ? (
+              <NotScheduledDetailed
+                groups={unscheduledGroups}
+                includeStatus={includeStatus}
+                includeJsComment={includeJsComment}
+              />
+            ) : (
+              <NotScheduledCompact groups={unscheduledGroups} />
+            )}
+          </View>
+        ) : null}
 
         <View style={styles.footer} fixed>
           <Text>Priority Task Report</Text>
@@ -165,13 +210,52 @@ export function PriorityTaskReportDocument({
 }
 
 // ------------------------------------------------------------
-// Detailed table — one row per task
+// Shared grouping helper
 // ------------------------------------------------------------
 
-function cadenceRank(c: ReportCadence | null): number {
-  if (c === null) return REPORT_CADENCES.length;
-  return REPORT_CADENCES.indexOf(c);
+type PriorityGroup = { priority: ReportCadence; tasks: ReportTask[] };
+
+/** Buckets a division's SCHEDULED tasks by priority, canonical order, empty buckets dropped. */
+function groupByPriority(tasks: ReportTask[]): PriorityGroup[] {
+  return REPORT_CADENCES.map((c) => ({
+    priority: c,
+    tasks: tasks.filter((t) => t.cadence === c).sort((a, b) => a.name.localeCompare(b.name)),
+  })).filter((pg) => pg.tasks.length > 0);
 }
+
+function TaskRow({
+  task,
+  includeStatus,
+  includeJsComment,
+}: {
+  task: ReportTask;
+  includeStatus: boolean;
+  includeJsComment: boolean;
+}) {
+  return (
+    <View style={styles.taskRow} wrap={false}>
+      <Text style={styles.cellTask}>{task.name}</Text>
+      {includeStatus ? <Text style={styles.cellText}>{task.latestStatus?.trim() || '—'}</Text> : null}
+      {includeJsComment ? <Text style={styles.cellText}>{task.jsComment?.trim() || '—'}</Text> : null}
+    </View>
+  );
+}
+
+function DetailedColumnHead({ includeStatus, includeJsComment }: { includeStatus: boolean; includeJsComment: boolean }) {
+  return (
+    <View style={styles.colHeadRow}>
+      <Text style={[styles.colHead, { flex: 3 }]}>TASK</Text>
+      {includeStatus ? <Text style={[styles.colHead, { flex: 1.6 }]}>STATUS</Text> : null}
+      {includeJsComment ? <Text style={[styles.colHead, { flex: 1.6 }]}>JS COMMENT</Text> : null}
+    </View>
+  );
+}
+
+// ------------------------------------------------------------
+// Detailed table — grouped by division, then priority. Each name prints
+// once as a heading; see the file-level doc comment for why this avoids a
+// stretched side-rail.
+// ------------------------------------------------------------
 
 function DetailedTable({
   groups,
@@ -182,46 +266,28 @@ function DetailedTable({
   includeStatus: boolean;
   includeJsComment: boolean;
 }) {
-  const rows = groups.flatMap((g) =>
-    [...g.tasks]
-      .sort((a, b) => {
-        const ra = cadenceRank(a.cadence);
-        const rb = cadenceRank(b.cadence);
-        if (ra !== rb) return ra - rb;
-        return a.name.localeCompare(b.name);
-      })
-      .map((t) => ({ task: t, divisionName: g.divisionName, colour: g.colour })),
-  );
+  const divisions = groups
+    .map((g) => ({ ...g, priorityGroups: groupByPriority(g.tasks) }))
+    .filter((g) => g.priorityGroups.length > 0);
 
   return (
     <View>
-      <View style={styles.colHeadRow}>
-        <View style={{ width: 10 }} />
-        <Text style={[styles.colHead, { flex: 0.9 }]}>DIVISION</Text>
-        <Text style={[styles.colHead, { flex: 0.85 }]}>PRIORITY</Text>
-        <Text style={[styles.colHead, { flex: 3 }]}>TASK</Text>
-        {includeStatus ? <Text style={[styles.colHead, { flex: 1.6 }]}>STATUS</Text> : null}
-        {includeJsComment ? <Text style={[styles.colHead, { flex: 1.6 }]}>JS COMMENT</Text> : null}
-      </View>
+      <DetailedColumnHead includeStatus={includeStatus} includeJsComment={includeJsComment} />
 
-      {rows.map(({ task, divisionName, colour }) => (
+      {divisions.map((g) => (
         <View
-          key={task.id}
-          style={[styles.detailRow, { backgroundColor: divisionWash(colour, 0.05) }]}
-          wrap={false}
+          key={g.divisionId}
+          style={[styles.divisionSection, { borderLeftColor: g.colour, backgroundColor: divisionWash(g.colour, DIVISION_WASH_ALPHA) }]}
         >
-          <View style={[styles.strip, { backgroundColor: colour }]} />
-          <Text style={styles.cellDivision}>{divisionName}</Text>
-          <Text style={styles.cellCadence}>
-            {task.cadence ? REPORT_CADENCE_LABEL[task.cadence] : 'Not scheduled'}
-          </Text>
-          <Text style={styles.cellTask}>{task.name}</Text>
-          {includeStatus ? (
-            <Text style={styles.cellText}>{task.latestStatus?.trim() || '—'}</Text>
-          ) : null}
-          {includeJsComment ? (
-            <Text style={styles.cellText}>{task.jsComment?.trim() || '—'}</Text>
-          ) : null}
+          <Text style={styles.divisionHeading}>{g.divisionName}</Text>
+          {g.priorityGroups.map((pg) => (
+            <View key={pg.priority}>
+              <Text style={styles.priorityHeading}>{REPORT_CADENCE_LABEL[pg.priority].toUpperCase()}</Text>
+              {pg.tasks.map((t) => (
+                <TaskRow key={t.id} task={t} includeStatus={includeStatus} includeJsComment={includeJsComment} />
+              ))}
+            </View>
+          ))}
         </View>
       ))}
     </View>
@@ -229,42 +295,75 @@ function DetailedTable({
 }
 
 // ------------------------------------------------------------
-// Compact grid — one row per division, tasks bucketed by cadence
+// Not scheduled — detailed variant. Same division heading, but flat (no
+// priority sub-groups — every row here is already "Not scheduled",
+// repeating that label per row would be the exact clutter this whole
+// change removes, and the section heading already says so once).
 // ------------------------------------------------------------
 
-type GridColumn = { key: ReportCadence | 'unscheduled'; label: string };
+function NotScheduledDetailed({
+  groups,
+  includeStatus,
+  includeJsComment,
+}: {
+  groups: ReportDivisionGroup[];
+  includeStatus: boolean;
+  includeJsComment: boolean;
+}) {
+  return (
+    <View>
+      <DetailedColumnHead includeStatus={includeStatus} includeJsComment={includeJsComment} />
 
-function gridColumns(selectedPriorities: ReportCadence[], includeUnscheduled: boolean): GridColumn[] {
-  const priorities = selectedPriorities.length > 0 ? selectedPriorities : REPORT_CADENCES;
-  const cols: GridColumn[] = priorities.map((c) => ({ key: c, label: REPORT_CADENCE_LABEL[c] }));
-  if (includeUnscheduled) cols.push({ key: 'unscheduled', label: 'Not scheduled' });
-  return cols;
+      {groups.map((g) => {
+        const tasks = [...g.tasks].sort((a, b) => a.name.localeCompare(b.name));
+        return (
+          <View
+            key={g.divisionId}
+            style={[styles.divisionSection, { borderLeftColor: g.colour, backgroundColor: divisionWash(g.colour, DIVISION_WASH_ALPHA) }]}
+          >
+            <Text style={styles.divisionHeading}>{g.divisionName}</Text>
+            {tasks.map((t) => (
+              <TaskRow key={t.id} task={t} includeStatus={includeStatus} includeJsComment={includeJsComment} />
+            ))}
+          </View>
+        );
+      })}
+    </View>
+  );
 }
 
-function tasksForColumn(tasks: ReportTask[], key: GridColumn['key']): ReportTask[] {
-  return tasks
-    .filter((t) => (key === 'unscheduled' ? t.cadence === null : t.cadence === key))
-    .sort((a, b) => a.name.localeCompare(b.name));
+// ------------------------------------------------------------
+// Compact grid — one row per division, tasks bucketed by priority.
+// Unscheduled tasks never appear here — see NotScheduledCompact. This
+// layout was already proven safe at scale (a single row's siblings stretch
+// against each other, not against a paginating subtree), so it keeps its
+// existing structure.
+// ------------------------------------------------------------
+
+function gridColumns(selectedPriorities: ReportCadence[]): ReportCadence[] {
+  return selectedPriorities.length > 0 ? selectedPriorities : [...REPORT_CADENCES];
+}
+
+function tasksForColumn(tasks: ReportTask[], key: ReportCadence): ReportTask[] {
+  return tasks.filter((t) => t.cadence === key).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function CompactGrid({
   groups,
   selectedPriorities,
-  includeUnscheduled,
 }: {
   groups: ReportDivisionGroup[];
   selectedPriorities: ReportCadence[];
-  includeUnscheduled: boolean;
 }) {
-  const columns = gridColumns(selectedPriorities, includeUnscheduled);
+  const columns = gridColumns(selectedPriorities);
 
   return (
     <View>
       <View style={styles.gridHeadRow}>
         <Text style={styles.gridDivisionHead}>DIVISION</Text>
         {columns.map((c) => (
-          <Text key={c.key} style={styles.gridColHead}>
-            {c.label.toUpperCase()}
+          <Text key={c} style={styles.gridColHead}>
+            {REPORT_CADENCE_LABEL[c].toUpperCase()}
           </Text>
         ))}
       </View>
@@ -272,10 +371,10 @@ function CompactGrid({
       {groups.map((g) => (
         <View
           key={g.divisionId}
-          style={[styles.gridRow, { backgroundColor: divisionWash(g.colour, 0.05) }]}
+          style={[styles.gridRow, { backgroundColor: divisionWash(g.colour, DIVISION_WASH_ALPHA) }]}
         >
           <View style={styles.gridDivisionCell}>
-            <View style={[styles.strip, { backgroundColor: g.colour }]} />
+            <View style={[styles.gridStrip, { backgroundColor: g.colour }]} />
             <View>
               <Text style={styles.gridDivisionName}>{g.divisionName}</Text>
               <Text style={styles.gridDivisionCount}>
@@ -284,9 +383,9 @@ function CompactGrid({
             </View>
           </View>
           {columns.map((c) => {
-            const items = tasksForColumn(g.tasks, c.key);
+            const items = tasksForColumn(g.tasks, c);
             return (
-              <View key={c.key} style={styles.gridCell}>
+              <View key={c} style={styles.gridCell}>
                 {items.length === 0 ? (
                   <Text style={styles.gridCellEmpty}>—</Text>
                 ) : (
@@ -301,6 +400,43 @@ function CompactGrid({
           })}
         </View>
       ))}
+    </View>
+  );
+}
+
+// ------------------------------------------------------------
+// Not scheduled — compact variant: Division + a single numbered list.
+// ------------------------------------------------------------
+
+function NotScheduledCompact({ groups }: { groups: ReportDivisionGroup[] }) {
+  return (
+    <View>
+      {groups.map((g) => {
+        const tasks = [...g.tasks].sort((a, b) => a.name.localeCompare(b.name));
+        return (
+          <View
+            key={g.divisionId}
+            style={[styles.notSchedRow, { backgroundColor: divisionWash(g.colour, DIVISION_WASH_ALPHA) }]}
+          >
+            <View style={styles.notSchedDivisionCell}>
+              <View style={[styles.gridStrip, { backgroundColor: g.colour }]} />
+              <View>
+                <Text style={styles.gridDivisionName}>{g.divisionName}</Text>
+                <Text style={styles.gridDivisionCount}>
+                  {tasks.length} {tasks.length === 1 ? 'task' : 'tasks'}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.notSchedList}>
+              {tasks.map((t, i) => (
+                <Text key={t.id} style={styles.gridItem}>
+                  {i + 1}. {t.name}
+                </Text>
+              ))}
+            </View>
+          </View>
+        );
+      })}
     </View>
   );
 }
