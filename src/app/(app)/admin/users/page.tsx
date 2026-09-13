@@ -128,6 +128,7 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
     canAccessDocumentCentre: u.canAccessDocumentCentre,
     canAccessBusinessCards: u.canAccessBusinessCards,
     canSeePersonalTasks: u.canSeePersonalTasks,
+    canAddJsComment: u.canAddJsComment,
     lastLogin: u.lastLogin,
   }));
 

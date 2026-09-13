@@ -145,3 +145,35 @@ export async function isTaskContributor(
   if (await isTaskCollaborator(userId, taskId)) return true;
   return isMentionedOnTask(userId, taskId);
 }
+
+/**
+ * Batched form of `isTaskContributor`, for a list of tasks rather than one —
+ * the ids among `taskIds` where the caller is either an explicit collaborator
+ * or @mentioned in the discussion. Two queries total regardless of how many
+ * task ids are passed, instead of 2×N calls to the single-task checks above.
+ *
+ * Built for the grouped tasks list's Daily/Weekly/Fortnight/Monthly board,
+ * which needs this exact right (the same one that gates editing Latest status
+ * on the task detail page) for every task in a division at once.
+ */
+export async function getContributorTaskIds(
+  userId: string,
+  taskIds: string[],
+): Promise<Set<string>> {
+  if (taskIds.length === 0) return new Set();
+  const [collaboratorRows, mentionRows] = await Promise.all([
+    prisma.taskCollaborator.findMany({
+      where: { taskId: { in: taskIds }, userId },
+      select: { taskId: true },
+    }),
+    prisma.taskComment.findMany({
+      where: { taskId: { in: taskIds }, mentions: { has: userId } },
+      select: { taskId: true },
+      distinct: ['taskId'],
+    }),
+  ]);
+  const ids = new Set<string>();
+  for (const r of collaboratorRows) ids.add(r.taskId);
+  for (const r of mentionRows) ids.add(r.taskId);
+  return ids;
+}

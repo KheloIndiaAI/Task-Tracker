@@ -3,8 +3,16 @@
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { useFormState, useFormStatus } from 'react-dom';
 
-import { setJsPriorityLaneAction } from '@/app/actions/tasks';
+import { setJsPriorityLaneAction, updateTaskFieldsAction, updateTaskJsCommentAction } from '@/app/actions/tasks';
+import {
+  INITIAL_FIELDS_STATE,
+  INITIAL_JS_COMMENT_STATE,
+  type UpdateFieldsState,
+  type UpdateJsCommentState,
+} from '@/app/actions/states';
+import { countWords, MAX_LATEST_STATUS_WORDS } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 /**
@@ -40,16 +48,34 @@ export type LaneBoardTask = {
   lane: LaneKey | null;
   /** Overdue, or urgent priority — drawn in the urgent tone, as on the board. */
   needsAttention: boolean;
+  /** Same field the task detail page's Latest status panel reads and writes. */
+  latestStatus: string | null;
+  /** Super-Admin/can_add_js_comment-gated field, distinct from latestStatus. */
+  jsComment: string | null;
+  /**
+   * Whether THIS viewer may edit latestStatus on THIS task — owner, creator,
+   * head/OSD/etc. (canManageTask), or an explicit collaborator/mention
+   * (getContributorTaskIds). Independent of `canCurate`, which gates the D/W/F/M
+   * pills and is a different, board-curation right.
+   */
+  canEditStatus: boolean;
 };
 
 const COLUMNS: {
   key: LaneKey;
   label: string;
   icon: string;
-  /** Header wash. */
+  /** Header wash — full-strength. */
   head: string;
   /** Lit pill. */
   pillOn: string;
+  /**
+   * Row wash — the same token at reduced opacity, so a task's column is
+   * identifiable at a glance without competing with the stronger header
+   * above it. Only applied to rows inside a lane column, never "Not
+   * scheduled", which stays neutral.
+   */
+  rowTint: string;
 }[] = [
   {
     key: 'today',
@@ -57,6 +83,7 @@ const COLUMNS: {
     icon: 'ti-calendar-event',
     head: 'bg-medium-soft text-medium',
     pillOn: 'bg-medium text-white',
+    rowTint: 'bg-medium-soft/35',
   },
   {
     key: 'week',
@@ -64,6 +91,7 @@ const COLUMNS: {
     icon: 'ti-calendar-week',
     head: 'bg-success-soft text-success',
     pillOn: 'bg-success text-white',
+    rowTint: 'bg-success-soft/35',
   },
   {
     // Warm orange rather than the mockup's red: --urgent already means "overdue
@@ -74,6 +102,7 @@ const COLUMNS: {
     icon: 'ti-calendar-due',
     head: 'bg-high-soft text-high',
     pillOn: 'bg-high text-white',
+    rowTint: 'bg-high-soft/35',
   },
   {
     key: 'month',
@@ -81,6 +110,7 @@ const COLUMNS: {
     icon: 'ti-calendar-month',
     head: 'bg-primary-soft text-primary',
     pillOn: 'bg-primary text-white',
+    rowTint: 'bg-primary-soft/35',
   },
 ];
 
@@ -104,9 +134,13 @@ const MAX_SLIDE_INDEX = Math.max(0, COLUMNS.length - VISIBLE_COLUMNS);
 export function DivisionLaneBoard({
   tasks,
   canCurate,
+  canEditJsComment,
 }: {
   tasks: LaneBoardTask[];
   canCurate: boolean;
+  /** Super Admin, or a user carrying the can_add_js_comment grant. One flag
+   *  for the whole board — JS Comment rights are not per-task. */
+  canEditJsComment: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -281,6 +315,9 @@ export function DivisionLaneBoard({
                             task={t}
                             n={offsets[col.key] + i + 1}
                             {...rowProps}
+                            showFields
+                            rowTint={col.rowTint}
+                            canEditJsComment={canEditJsComment}
                           />
                         ))}
                       </ul>
@@ -368,6 +405,11 @@ const PILL_BASE =
  * Readers who cannot curate get no clock and no dead pills — just a static
  * chip showing where the task already sits, and nothing at all if it sits
  * nowhere.
+ *
+ * `showFields` adds the Status and JS Comment lines below the name, plus the
+ * column's row tint — set only for rows inside a Daily/Weekly/Fortnight/Monthly
+ * column, never for "Not scheduled": those two fields describe where a task
+ * stands on its schedule, which an unscheduled task does not have yet.
  */
 function LaneRow({
   task,
@@ -377,6 +419,9 @@ function LaneRow({
   onSet,
   openRow,
   onOpenRow,
+  showFields,
+  rowTint,
+  canEditJsComment,
 }: {
   task: LaneBoardTask;
   n: number;
@@ -385,6 +430,9 @@ function LaneRow({
   onSet: (taskId: string, lane: LaneKey | null) => void;
   openRow: string | null;
   onOpenRow: (taskId: string | null) => void;
+  showFields?: boolean;
+  rowTint?: string;
+  canEditJsComment?: boolean;
 }) {
   const open = openRow === task.id;
   // What the caller just chose, held while the confirmation shows. `removed` is
@@ -413,7 +461,17 @@ function LaneRow({
   };
 
   return (
-    <li className="flex items-center gap-2 border-b border-line-2 px-2 py-1 last:border-b-0">
+    <li
+      className={cn(
+        'border-b border-line-2 px-2 last:border-b-0',
+        showFields ? cn('flex flex-col gap-1 py-1.5', rowTint) : 'flex items-center gap-2 py-1',
+      )}
+    >
+      {/* Line 1, unchanged in every particular from the compact row — when
+          showFields is false this div contributes nothing (display:contents),
+          so the "Not scheduled" strip renders byte-for-byte as it did before
+          Status/JS Comment existed. */}
+      <div className={showFields ? 'flex items-center gap-2' : 'contents'}>
       <span className="w-6 shrink-0 text-right font-mono text-[10px] tabular-nums text-ink-3">
         {n}.
       </span>
@@ -523,6 +581,240 @@ function LaneRow({
           </>
         )}
       </div>
+      </div>
+
+      {showFields ? (
+        <>
+          <StatusLine taskId={task.id} value={task.latestStatus} canEdit={!!task.canEditStatus} />
+          <JsCommentLine taskId={task.id} value={task.jsComment} canEdit={!!canEditJsComment} />
+        </>
+      ) : null}
     </li>
+  );
+}
+
+/** pl-8 = the index column (w-6) plus its gap-2 to the name in line 1, so
+ *  Status/JS Comment line up under the task name rather than the index. */
+const FIELD_LINE_INDENT = 'pl-8';
+
+function MiniSaveButton({ disabled }: { disabled?: boolean }) {
+  const { pending } = useFormStatus();
+  return (
+    <button
+      type="submit"
+      disabled={pending || disabled}
+      className="shrink-0 rounded bg-ink px-2 py-0.5 text-[10px] font-medium text-onink disabled:opacity-60"
+    >
+      {pending ? 'Saving…' : 'Save'}
+    </button>
+  );
+}
+
+/**
+ * The "Status :" line — reads and writes the exact same `tasks.latest_status`
+ * field as the task detail page's Latest status panel (SectionLatestStatus),
+ * via the same updateTaskFieldsAction and the same 50-word cap, so the two
+ * surfaces can never disagree about what a task's status says. `canEdit` is
+ * `task.canEditStatus`, computed once per task in tasks/page.tsx — owner,
+ * creator, head/OSD/etc., OR an explicit collaborator/mention. The server
+ * re-checks independently regardless of what this prop says.
+ */
+function StatusLine({
+  taskId,
+  value,
+  canEdit,
+}: {
+  taskId: string;
+  value: string | null;
+  canEdit: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value ?? '');
+  const [state, formAction] = useFormState<UpdateFieldsState, FormData>(
+    updateTaskFieldsAction,
+    INITIAL_FIELDS_STATE,
+  );
+
+  useEffect(() => {
+    if (state.ok) setEditing(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.ok, state.epoch]);
+
+  useEffect(() => {
+    if (editing) setDraft(value ?? '');
+  }, [editing, value]);
+
+  const wordCount = countWords(draft);
+  const overLimit = wordCount > MAX_LATEST_STATUS_WORDS;
+
+  if (editing) {
+    return (
+      <form action={formAction} className={cn('flex flex-col gap-1', FIELD_LINE_INDENT)}>
+        <input type="hidden" name="taskId" value={taskId} />
+        <div className="flex items-start gap-1.5">
+          <span className="shrink-0 pt-1 text-[10.5px] font-medium text-ink-3">Status :</span>
+          <textarea
+            name="latestStatus"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={2}
+            autoFocus
+            placeholder="Add status…"
+            className="min-w-0 flex-1 resize-none rounded-md border border-line bg-panel px-2 py-1 text-[11.5px] text-ink-2 outline-none focus:border-ink"
+            maxLength={1000}
+          />
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <span
+            className={cn(
+              'text-[10px] tabular-nums',
+              overLimit ? 'text-urgent font-medium' : 'text-ink-3',
+            )}
+          >
+            {wordCount}/{MAX_LATEST_STATUS_WORDS} words
+          </span>
+          <div className="flex items-center gap-2">
+            {state.fieldErrors?.latestStatus ? (
+              <span role="alert" className="text-[10px] text-urgent">
+                {state.fieldErrors.latestStatus}
+              </span>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              className="rounded px-2 py-0.5 text-[10px] font-medium text-ink-2 hover:bg-line-2"
+            >
+              Cancel
+            </button>
+            <MiniSaveButton disabled={overLimit} />
+          </div>
+        </div>
+        {state.error ? (
+          <p role="alert" className="text-[10px] text-urgent">
+            {state.error}
+          </p>
+        ) : null}
+      </form>
+    );
+  }
+
+  return (
+    <div className={cn('flex items-center gap-1.5', FIELD_LINE_INDENT)}>
+      <span className="shrink-0 text-[10.5px] font-medium text-ink-3">Status :</span>
+      <span
+        className={cn(
+          'min-w-0 flex-1 truncate text-[11.5px]',
+          value ? 'text-ink' : 'italic text-ink-3',
+        )}
+      >
+        {value || 'Add status…'}
+      </span>
+      {canEdit ? (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          aria-label="Edit status"
+          className="shrink-0 text-ink-3 transition-colors hover:text-ink"
+        >
+          <i className="ti ti-pencil text-[12px]" aria-hidden="true" />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The "JS Comment :" line — a separate field from Status, gated on Super
+ * Admin / the can_add_js_comment grant rather than task contribution. No word
+ * cap (only Latest status has one); a generous character ceiling only.
+ */
+function JsCommentLine({
+  taskId,
+  value,
+  canEdit,
+}: {
+  taskId: string;
+  value: string | null;
+  canEdit: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value ?? '');
+  const [state, formAction] = useFormState<UpdateJsCommentState, FormData>(
+    updateTaskJsCommentAction,
+    INITIAL_JS_COMMENT_STATE,
+  );
+
+  useEffect(() => {
+    if (state.ok) setEditing(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.ok, state.epoch]);
+
+  useEffect(() => {
+    if (editing) setDraft(value ?? '');
+  }, [editing, value]);
+
+  if (editing) {
+    return (
+      <form action={formAction} className={cn('flex flex-col gap-1', FIELD_LINE_INDENT)}>
+        <input type="hidden" name="taskId" value={taskId} />
+        <div className="flex items-start gap-1.5">
+          <span className="shrink-0 pt-1 text-[10.5px] font-medium text-ink-3">JS Comment :</span>
+          <textarea
+            name="jsComment"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={2}
+            autoFocus
+            placeholder="Add comment…"
+            className="min-w-0 flex-1 resize-none rounded-md border border-line bg-panel px-2 py-1 text-[11.5px] text-ink-2 outline-none focus:border-ink"
+            maxLength={1000}
+          />
+        </div>
+        <div className="flex items-center justify-end gap-2">
+          {state.fieldErrors?.jsComment ? (
+            <span role="alert" className="text-[10px] text-urgent">
+              {state.fieldErrors.jsComment}
+            </span>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => setEditing(false)}
+            className="rounded px-2 py-0.5 text-[10px] font-medium text-ink-2 hover:bg-line-2"
+          >
+            Cancel
+          </button>
+          <MiniSaveButton />
+        </div>
+        {state.error ? (
+          <p role="alert" className="text-[10px] text-urgent">
+            {state.error}
+          </p>
+        ) : null}
+      </form>
+    );
+  }
+
+  return (
+    <div className={cn('flex items-center gap-1.5', FIELD_LINE_INDENT)}>
+      <span className="shrink-0 text-[10.5px] font-medium text-ink-3">JS Comment :</span>
+      <span
+        className={cn(
+          'min-w-0 flex-1 truncate text-[11.5px]',
+          value ? 'text-ink' : 'italic text-ink-3',
+        )}
+      >
+        {value || 'Add comment…'}
+      </span>
+      {canEdit ? (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          aria-label="Edit JS comment"
+          className="shrink-0 text-ink-3 transition-colors hover:text-ink"
+        >
+          <i className="ti ti-pencil text-[12px]" aria-hidden="true" />
+        </button>
+      ) : null}
+    </div>
   );
 }

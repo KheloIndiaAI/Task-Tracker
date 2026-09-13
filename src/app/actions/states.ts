@@ -58,6 +58,9 @@ export const INITIAL_PRIORITY_STATE: UpdatePriorityState = { ...ZERO };
 export type UpdateFieldsState = Base;
 export const INITIAL_FIELDS_STATE: UpdateFieldsState = { ...ZERO };
 
+export type UpdateJsCommentState = Base;
+export const INITIAL_JS_COMMENT_STATE: UpdateJsCommentState = { ...ZERO };
+
 export type SetJsPriorityLaneState = Base;
 export const INITIAL_JS_LANE_STATE: SetJsPriorityLaneState = { ...ZERO };
 

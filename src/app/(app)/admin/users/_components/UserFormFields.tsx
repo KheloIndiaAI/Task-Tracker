@@ -48,6 +48,7 @@ export type UserFormDefaults = {
   canAccessDocumentCentre?: boolean;
   canAccessBusinessCards?: boolean;
   canSeePersonalTasks?: boolean;
+  canAddJsComment?: boolean;
 };
 
 type UserFormFieldsProps = {
@@ -275,6 +276,24 @@ export function UserFormFields({
             name="canSeePersonalTasks"
             defaultChecked={defaults?.canSeePersonalTasks}
             ariaLabel="Grant personal task visibility"
+          />
+        </label>
+        <label className="mt-2 flex items-start justify-between gap-3 px-3 py-2.5 rounded-lg border border-line">
+          <span className="min-w-0">
+            <span className="inline-flex items-center gap-2 text-[12px] text-ink">
+              <i className="ti ti-message-2 text-[14px] text-primary" aria-hidden="true" />
+              JS Comment access
+            </span>
+            <span className="mt-0.5 block text-[11px] text-ink-3">
+              Lets this user add the JS Comment on tasks in the Daily/Weekly/
+              Fortnight/Monthly board. Off by default even for leadership;
+              Super Admin always can.
+            </span>
+          </span>
+          <Switch
+            name="canAddJsComment"
+            defaultChecked={defaults?.canAddJsComment}
+            ariaLabel="Grant JS Comment access"
           />
         </label>
       </Section>

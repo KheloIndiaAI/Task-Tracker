@@ -238,6 +238,10 @@ const createUserSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'on'),
+  canAddJsComment: z
+    .string()
+    .optional()
+    .transform((v) => v === 'on'),
   // phone + work activities are self-service on /profile — the admin form
   // never collects them, so they are intentionally absent here.
 });
@@ -271,6 +275,7 @@ export async function createUserAction(
     canAccessDocumentCentre: formData.get('canAccessDocumentCentre'),
     canAccessBusinessCards: formData.get('canAccessBusinessCards'),
     canSeePersonalTasks: formData.get('canSeePersonalTasks'),
+    canAddJsComment: formData.get('canAddJsComment'),
   });
   if (!parsed.success) {
     const fieldErrors: Record<string, string> = {};
@@ -331,6 +336,7 @@ export async function createUserAction(
           canAccessDocumentCentre: parsed.data.canAccessDocumentCentre ?? false,
           canAccessBusinessCards: parsed.data.canAccessBusinessCards ?? false,
           canSeePersonalTasks: parsed.data.canSeePersonalTasks ?? false,
+          canAddJsComment: parsed.data.canAddJsComment ?? false,
           forcePasswordChange: parsed.data.forcePasswordChange ?? true,
           createdById: guard.userId,
         },
@@ -357,6 +363,7 @@ export async function createUserAction(
       canAccessDocumentCentre: created.canAccessDocumentCentre,
       canAccessBusinessCards: created.canAccessBusinessCards,
       canSeePersonalTasks: created.canSeePersonalTasks,
+      canAddJsComment: created.canAddJsComment,
     });
 
     revalidateAll();
@@ -402,6 +409,10 @@ const updateUserSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'on'),
+  canAddJsComment: z
+    .string()
+    .optional()
+    .transform((v) => v === 'on'),
   // phone + work activities are self-service on /profile — the admin form
   // never collects them, so they are intentionally absent here (and must
   // never be written from this action, which would wipe self-set values).
@@ -431,6 +442,7 @@ export async function updateUserAction(
     canAccessDocumentCentre: formData.get('canAccessDocumentCentre'),
     canAccessBusinessCards: formData.get('canAccessBusinessCards'),
     canSeePersonalTasks: formData.get('canSeePersonalTasks'),
+    canAddJsComment: formData.get('canAddJsComment'),
   });
   if (!parsed.success) {
     const fieldErrors: Record<string, string> = {};
@@ -457,6 +469,7 @@ export async function updateUserAction(
       canAccessDocumentCentre: true,
       canAccessBusinessCards: true,
       canSeePersonalTasks: true,
+      canAddJsComment: true,
     },
   });
   if (!before) return fail('User not found.', epoch);
@@ -537,6 +550,7 @@ export async function updateUserAction(
           canAccessDocumentCentre: parsed.data.canAccessDocumentCentre,
           canAccessBusinessCards: parsed.data.canAccessBusinessCards,
           canSeePersonalTasks: parsed.data.canSeePersonalTasks,
+          canAddJsComment: parsed.data.canAddJsComment,
         },
       });
       if (extraToRemove.length > 0) {
@@ -572,6 +586,7 @@ export async function updateUserAction(
       canAccessDocumentCentre: updated.canAccessDocumentCentre,
       canAccessBusinessCards: updated.canAccessBusinessCards,
       canSeePersonalTasks: updated.canSeePersonalTasks,
+      canAddJsComment: updated.canAddJsComment,
     });
 
     // Granting or revoking Super Admin is security-sensitive — leave a
@@ -619,6 +634,19 @@ export async function updateUserAction(
         updated.id,
         { canSeePersonalTasks: before.canSeePersonalTasks },
         { canSeePersonalTasks: updated.canSeePersonalTasks },
+      );
+    }
+
+    // JS Comment access is a real capability grant (it lets someone add
+    // commentary that reads as coming from the JS office), so it gets its own
+    // audit entry too.
+    if (before.canAddJsComment !== updated.canAddJsComment) {
+      await audit(
+        guard.userId,
+        'role_change',
+        updated.id,
+        { canAddJsComment: before.canAddJsComment },
+        { canAddJsComment: updated.canAddJsComment },
       );
     }
 

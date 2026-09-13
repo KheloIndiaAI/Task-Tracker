@@ -229,6 +229,12 @@ model User {
   // regardless of this flag; for everyone else it is the single switch.
   // See buildVisibilityClausesFrom in src/lib/visibility-rules.ts.
   canSeePersonalTasks     Boolean @default(false) @map("can_see_personal_tasks")
+  // Super-Admin-managed grant to add/edit the JS Comment field on tasks (the
+  // grouped tasks list's Daily/Weekly/Fortnight/Monthly board). Off by
+  // default for everyone, including leadership — unlike canSeePersonalTasks
+  // this has no seeded backfill; Super Admin always has the right regardless
+  // of this flag, so it only ever widens who ELSE can add it.
+  canAddJsComment     Boolean   @default(false) @map("can_add_js_comment")
   // Opt-out toggle for WhatsApp notifications (default on; user-editable on /profile).
   whatsappOptIn       Boolean   @default(true) @map("whatsapp_opt_in")
   forcePasswordChange Boolean   @default(false) @map("force_password_change")
@@ -431,6 +437,11 @@ model Task {
   // panel above Context on the task detail page. Same contribute-level edit
   // right as description — see isTaskContributor.
   latestStatus String? @map("latest_status")
+  // Free-text JS-side note, shown alongside latestStatus on the grouped tasks
+  // list's Daily/Weekly/Fortnight/Monthly board. Edit right is Super Admin OR
+  // the per-user users.can_add_js_comment grant — unrelated to isTaskContributor,
+  // since this is JS office commentary on the task, not a contribution to it.
+  jsComment String? @map("js_comment")
 
   ownerId       String  @map("owner_id") @db.Uuid
   divisionId    String  @map("division_id") @db.Uuid

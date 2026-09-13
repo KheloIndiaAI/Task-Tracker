@@ -8,6 +8,7 @@ import { prisma } from '@/lib/db';
 import { formatDue, initialsOf } from '@/lib/format';
 import { canManageTask, canSetJsPriorityLane, getHeadedDivisionIds } from '@/lib/rbac';
 import { getPmuTeamMemberIds } from '@/lib/pmu-team';
+import { getContributorTaskIds } from '@/lib/task-participants';
 import { resolveGroupByDivision } from '@/lib/task-grouping-shared';
 import { fetchTaskCounts, fetchVisibleTasks, getPmuParentDivisionHeadId, type TaskFilter, type TaskSort } from '@/lib/visibility';
 
@@ -63,6 +64,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
       hierarchySlot: true,
       isPmu: true,
       pmuId: true,
+      canAddJsComment: true,
       divisionAccess: { select: { divisionId: true } },
     },
   });
@@ -135,6 +137,10 @@ export default async function TasksPage({ searchParams }: PageProps) {
   // via canManageTask below. Both only gate what the UI offers — the server
   // actions re-authorize independently.
   const canSetFortnight = me.isSuperAdmin || me.hierarchySlot === 'osd';
+  // JS Comment (the board's own field, distinct from Latest status) is Super
+  // Admin, or a user carrying the can_add_js_comment grant — see
+  // updateTaskJsCommentAction. Unrelated to task contribution rights below.
+  const canEditJsComment = me.isSuperAdmin || me.canAddJsComment;
   const permCaller = {
     id: me.id,
     isSuperAdmin: me.isSuperAdmin,
@@ -164,6 +170,19 @@ export default async function TasksPage({ searchParams }: PageProps) {
   const segments = groupByDivision
     ? null
     : segmentTasksByRelation(tasks, me.id, me.isPmu, me.pmuId, isExcludedPmuHead);
+
+  // Who may edit Latest status from the board's Status row — the same
+  // contribute right the task detail page uses (owner/creator via
+  // canManageTask, or an explicit collaborator/mention via
+  // getContributorTaskIds). Computed once, batched across every task in
+  // every division shown here, rather than per task: two queries total
+  // instead of 2×N.
+  const contributorTaskIds = grouped
+    ? await getContributorTaskIds(
+        me.id,
+        grouped.flatMap((g) => g.tasks.map((t) => t.id)),
+      )
+    : new Set<string>();
 
   // Stable identity of this exact list view — used to scope the preserved scroll
   // position and quick-search query so Back restores them only for the same
@@ -251,10 +270,11 @@ export default async function TasksPage({ searchParams }: PageProps) {
                       unit="task"
                     >
                       <DivisionLaneBoard
-                        tasks={toLaneBoardTasks(group.tasks)}
+                        tasks={toLaneBoardTasks(group.tasks, permCaller, contributorTaskIds)}
                         canCurate={canSetJsPriorityLane(permCaller, {
                           divisionId: group.divisionId,
                         })}
+                        canEditJsComment={canEditJsComment}
                       />
                       <DivisionCardsToggle
                         count={group.tasks.length}
@@ -416,8 +436,18 @@ function TaskRow({
  * columns. The lane is the task's JS Priority lane verbatim — every lane now
  * has a column, so nothing collapses to null but "no lane at all". A task is
  * drawn in the urgent tone when it is overdue or flagged urgent.
+ *
+ * canEditStatus mirrors the task detail page's Latest-status edit right
+ * exactly: canManageTask covers owner/creator/head/OSD/etc. (pure, no extra
+ * query — permCaller already carries everything it needs), OR the task's id
+ * is in contributorTaskIds (an explicit collaborator or @mention, resolved in
+ * bulk by getContributorTaskIds before this runs).
  */
-function toLaneBoardTasks(tasks: VisibleTask[]): LaneBoardTask[] {
+function toLaneBoardTasks(
+  tasks: VisibleTask[],
+  permCaller: PermCaller,
+  contributorTaskIds: Set<string>,
+): LaneBoardTask[] {
   return tasks.map((t) => {
     const lane = t.jsPriorityLane;
     return {
@@ -428,6 +458,15 @@ function toLaneBoardTasks(tasks: VisibleTask[]): LaneBoardTask[] {
           ? lane
           : null,
       needsAttention: formatDue(t.dueDate).tone === 'overdue' || t.priority === 'urgent',
+      latestStatus: t.latestStatus,
+      jsComment: t.jsComment,
+      canEditStatus:
+        canManageTask(permCaller, {
+          ownerId: t.ownerId,
+          createdById: t.createdById,
+          divisionId: t.divisionId,
+          visibility: t.visibility,
+        }) || contributorTaskIds.has(t.id),
     };
   });
 }

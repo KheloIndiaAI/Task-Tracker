@@ -39,6 +39,7 @@ export type UserRow = {
   canAccessDocumentCentre: boolean;
   canAccessBusinessCards: boolean;
   canSeePersonalTasks: boolean;
+  canAddJsComment: boolean;
   lastLogin: Date | null;
 };
 
@@ -274,6 +275,7 @@ function rowToDefaults(u: UserRow): UserFormDefaults {
     canAccessDocumentCentre: u.canAccessDocumentCentre,
     canAccessBusinessCards: u.canAccessBusinessCards,
     canSeePersonalTasks: u.canSeePersonalTasks,
+    canAddJsComment: u.canAddJsComment,
   };
 }
 

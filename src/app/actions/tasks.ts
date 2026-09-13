@@ -1114,6 +1114,89 @@ export async function updateTaskFieldsAction(
 }
 
 // ============================================================
+// updateTaskJsComment — Super Admin / can_add_js_comment-granted only
+// ============================================================
+
+const updateJsCommentSchema = z.object({
+  taskId: z.string().uuid(),
+  jsComment: z
+    .string()
+    .max(1000)
+    .optional()
+    .transform((s) => (typeof s === 'string' ? s : undefined)),
+});
+
+type UpdateJsCommentState = ActionState;
+const INITIAL_JS_COMMENT_STATE: UpdateJsCommentState = { ok: false, epoch: 0 };
+
+/**
+ * Set a task's JS Comment — shown next to Latest status on the grouped tasks
+ * list's board. Unlike Latest status, this is NOT a contribute right: it is
+ * Super Admin, or a user carrying the `can_add_js_comment` grant (Users >
+ * Create / Edit), full stop. It has nothing to do with owning, creating,
+ * collaborating on, or being mentioned on the task — it is JS-office
+ * commentary ABOUT the task, not a contribution TO it, so isTaskContributor
+ * does not apply here.
+ */
+export async function updateTaskJsCommentAction(
+  prev: UpdateJsCommentState | undefined,
+  formData: FormData,
+): Promise<UpdateJsCommentState> {
+  const epoch = bump(prev);
+  const me = await requireSession();
+  if (!me) return fail('You are signed out.', epoch);
+
+  const parsed = updateJsCommentSchema.safeParse({
+    taskId: formData.get('taskId'),
+    jsComment: formData.has('jsComment') ? (formData.get('jsComment') as string) : undefined,
+  });
+  if (!parsed.success) {
+    const fieldErrors: Record<string, string> = {};
+    for (const issue of parsed.error.issues) {
+      fieldErrors[String(issue.path[0])] = issue.message;
+    }
+    return { ok: false, fieldErrors, epoch };
+  }
+
+  const meRow = await prisma.user.findUnique({
+    where: { id: me.id },
+    select: { isSuperAdmin: true, canAddJsComment: true },
+  });
+  if (!meRow) return fail('Account not found.', epoch);
+  if (!(meRow.isSuperAdmin || meRow.canAddJsComment)) {
+    return fail('Only Super Admin, or a user granted JS Comment access, can add this.', epoch);
+  }
+
+  const task = await prisma.task.findUnique({
+    where: { id: parsed.data.taskId },
+    select: { id: true, jsComment: true },
+  });
+  if (!task) return fail('Task not found.', epoch);
+  if (parsed.data.jsComment === undefined) return ok(epoch);
+
+  const nextValue = parsed.data.jsComment.length > 0 ? parsed.data.jsComment : null;
+  if (nextValue === (task.jsComment ?? null)) return ok(epoch);
+
+  try {
+    await prisma.$transaction([
+      prisma.task.update({
+        where: { id: task.id },
+        data: { jsComment: nextValue, lastActivityAt: new Date() },
+      }),
+      prisma.taskActivity.create({
+        data: { taskId: task.id, actorId: me.id, eventType: 'js_comment_updated', payload: {} },
+      }),
+    ]);
+  } catch (err) {
+    logError('updateTaskJsCommentAction failed', err);
+    return fail('Could not save the comment.', epoch);
+  }
+
+  revalidateTask(task.id);
+  return ok(epoch);
+}
+
+// ============================================================
 // Subtasks — add + toggle
 // ============================================================
 

@@ -112,6 +112,8 @@ function describeEvent(type: string, payload: Record<string, unknown> | null): s
       return 'updated the description';
     case 'latest_status_updated':
       return 'updated the latest status';
+    case 'js_comment_updated':
+      return 'updated the JS comment';
     case 'due_date_changed':
       return payload.to
         ? `set the due date to ${payload.to}`
