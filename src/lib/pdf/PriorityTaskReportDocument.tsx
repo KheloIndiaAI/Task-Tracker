@@ -34,9 +34,6 @@ export type PriorityTaskReportProps = {
   selectedPriorities: ReportCadence[];
   /** Whether "Not scheduled" tasks are in scope — adds the 5th compact column. */
   includeUnscheduled: boolean;
-  divisionLabel: string;
-  priorityLabel: string;
-  scopeLabel: string;
   includeStatus: boolean;
   includeJsComment: boolean;
   /** Pre-formatted IST date/time, e.g. "13 Sep 2026, 4:05 pm" — formatting policy lives with the caller. */
@@ -55,8 +52,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.page,
   },
   title: { fontSize: 19, fontWeight: 700, color: C.ink },
-  summaryLine: { fontSize: 9, color: C.ink2, marginTop: 5 },
-  metaLine: { fontSize: 8, color: C.ink3, marginTop: 2 },
+  metaLine: { fontSize: 8, color: C.ink3, marginTop: 5 },
   headerRule: {
     borderBottomWidth: 1.5,
     borderBottomColor: C.ink,
@@ -106,9 +102,9 @@ const styles = StyleSheet.create({
     borderBottomColor: C.line2,
   },
   strip: { width: 3, marginRight: 7, borderRadius: 1.5 },
-  cellDivision: { flex: 1.3, fontSize: 9, fontWeight: 500, color: C.ink, paddingRight: 6 },
+  cellDivision: { flex: 0.9, fontSize: 9, fontWeight: 500, color: C.ink, paddingRight: 6 },
   cellCadence: { flex: 0.85, fontSize: 8.5, color: C.ink2, paddingRight: 6 },
-  cellTask: { flex: 2.6, fontSize: 9, color: C.ink, paddingRight: 6 },
+  cellTask: { flex: 3, fontSize: 9, color: C.ink, paddingRight: 6 },
   cellText: { flex: 1.6, fontSize: 8.5, color: C.ink2, paddingRight: 6 },
 
   // ---- Compact grid ----
@@ -134,9 +130,6 @@ export function PriorityTaskReportDocument({
   layout,
   selectedPriorities,
   includeUnscheduled,
-  divisionLabel,
-  priorityLabel,
-  scopeLabel,
   includeStatus,
   includeJsComment,
   generatedAtLabel,
@@ -147,13 +140,7 @@ export function PriorityTaskReportDocument({
     <Document title="Priority Task Report">
       <Page size="A4" style={styles.page} wrap>
         <Text style={styles.title}>Priority Task Report</Text>
-        <Text style={styles.summaryLine}>
-          Division: {divisionLabel}  ·  Priority: {priorityLabel}  ·  Scope: {scopeLabel}
-        </Text>
-        <Text style={styles.metaLine}>
-          Generated {generatedAtLabel}  ·  {totalTasks} {totalTasks === 1 ? 'task' : 'tasks'} across{' '}
-          {groups.length} {groups.length === 1 ? 'division' : 'divisions'}
-        </Text>
+        <Text style={styles.metaLine}>Generated {generatedAtLabel}</Text>
         <View style={styles.headerRule} />
 
         {totalTasks === 0 ? (
@@ -210,9 +197,9 @@ function DetailedTable({
     <View>
       <View style={styles.colHeadRow}>
         <View style={{ width: 10 }} />
-        <Text style={[styles.colHead, { flex: 1.3 }]}>DIVISION</Text>
+        <Text style={[styles.colHead, { flex: 0.9 }]}>DIVISION</Text>
         <Text style={[styles.colHead, { flex: 0.85 }]}>PRIORITY</Text>
-        <Text style={[styles.colHead, { flex: 2.6 }]}>TASK</Text>
+        <Text style={[styles.colHead, { flex: 3 }]}>TASK</Text>
         {includeStatus ? <Text style={[styles.colHead, { flex: 1.6 }]}>STATUS</Text> : null}
         {includeJsComment ? <Text style={[styles.colHead, { flex: 1.6 }]}>JS COMMENT</Text> : null}
       </View>

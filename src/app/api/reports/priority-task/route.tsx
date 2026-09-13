@@ -9,12 +9,7 @@ import { getHeadedDivisionIds } from '@/lib/rbac';
 import { rateLimit } from '@/lib/rate-limit';
 import { logError } from '@/lib/utils/log';
 import { fetchReportDivisionGroups } from '@/lib/reports';
-import {
-  canAccessReportGeneration,
-  REPORT_CADENCE_LABEL,
-  isReportCadence,
-  type ReportCadence,
-} from '@/lib/reports-shared';
+import { canAccessReportGeneration, isReportCadence } from '@/lib/reports-shared';
 import { registerReportFonts } from '@/lib/pdf/fonts';
 import { PriorityTaskReportDocument } from '@/lib/pdf/PriorityTaskReportDocument';
 
@@ -55,18 +50,6 @@ const querySchema = z.object({
 
 function splitParam(v: string | undefined): string[] {
   return v ? v.split(',').map((s) => s.trim()).filter(Boolean) : [];
-}
-
-/** "Khelo India Mission" / "Khelo India Mission, NSDF" / "4 divisions selected". */
-function summariseNames(names: string[]): string {
-  if (names.length === 0) return 'All divisions';
-  if (names.length <= 3) return names.join(', ');
-  return `${names.length} divisions selected`;
-}
-
-function summarisePriorities(priorities: ReportCadence[]): string {
-  if (priorities.length === 0) return 'All priorities';
-  return priorities.map((p) => REPORT_CADENCE_LABEL[p]).join(', ');
 }
 
 export async function GET(request: Request) {
@@ -112,18 +95,13 @@ export async function GET(request: Request) {
   const includeStatus = parsed.data.status === '1';
   const includeJsComment = parsed.data.jsComment === '1';
 
-  const [divisionRows, groups] = await Promise.all([
-    divisionIds.length > 0
-      ? prisma.division.findMany({ where: { id: { in: divisionIds } }, select: { name: true } })
-      : Promise.resolve([]),
-    fetchReportDivisionGroups(me, {
-      divisionIds,
-      priorities,
-      scope,
-      includeStatus,
-      includeJsComment,
-    }),
-  ]);
+  const groups = await fetchReportDivisionGroups(me, {
+    divisionIds,
+    priorities,
+    scope,
+    includeStatus,
+    includeJsComment,
+  });
 
   const now = new Date();
   const layout = includeStatus || includeJsComment ? 'detailed' : 'compact';
@@ -137,9 +115,6 @@ export async function GET(request: Request) {
         layout={layout}
         selectedPriorities={priorities}
         includeUnscheduled={includeUnscheduled}
-        divisionLabel={summariseNames(divisionRows.map((d) => d.name))}
-        priorityLabel={summarisePriorities(priorities)}
-        scopeLabel={scope === 'all' ? 'All tasks' : 'Scheduled tasks only'}
         includeStatus={includeStatus}
         includeJsComment={includeJsComment}
         generatedAtLabel={formatDateTimeIST(now)}
