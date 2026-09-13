@@ -426,6 +426,11 @@ model Task {
   refNumber   String? @map("ref_number")
   name        String
   description String?
+  // Free-text status update, capped at 50 words (enforced in the
+  // updateTaskFieldsAction schema, not the database) and shown in its own
+  // panel above Context on the task detail page. Same contribute-level edit
+  // right as description — see isTaskContributor.
+  latestStatus String? @map("latest_status")
 
   ownerId       String  @map("owner_id") @db.Uuid
   divisionId    String  @map("division_id") @db.Uuid

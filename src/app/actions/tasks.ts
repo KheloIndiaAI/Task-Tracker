@@ -9,7 +9,7 @@ import { Prisma } from '@prisma/client';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { touchTaskActivity, touchTimelineFileActivity } from '@/lib/activity';
-import { parseDueDateInput } from '@/lib/format';
+import { countWords, MAX_LATEST_STATUS_WORDS, parseDueDateInput } from '@/lib/format';
 import {
   canActAsHeadOf,
   canAssignTaskTo,
@@ -817,6 +817,15 @@ const updateFieldsSchema = z.object({
     .max(5000)
     .optional()
     .transform((s) => (typeof s === 'string' ? s : undefined)),
+  latestStatus: z
+    .string()
+    .max(1000)
+    .optional()
+    .transform((s) => (typeof s === 'string' ? s : undefined))
+    .refine(
+      (s) => s === undefined || countWords(s) <= MAX_LATEST_STATUS_WORDS,
+      `Keep the latest status under ${MAX_LATEST_STATUS_WORDS} words`,
+    ),
   // Distinguishes "field absent" (undefined — leave the due date alone,
   // e.g. when saving an unrelated field like the title) from "field
   // present but empty" (null — an explicit clear via the Due row's Clear
@@ -862,6 +871,7 @@ export async function updateTaskFieldsAction(
     taskId: formData.get('taskId'),
     name: formData.has('name') ? (formData.get('name') as string) : undefined,
     description: formData.has('description') ? (formData.get('description') as string) : undefined,
+    latestStatus: formData.has('latestStatus') ? (formData.get('latestStatus') as string) : undefined,
     dueDate: formData.has('dueDate') ? (formData.get('dueDate') as string) : undefined,
     visibility: formData.has('visibility')
       ? (formData.get('visibility') as string)
@@ -888,22 +898,22 @@ export async function updateTaskFieldsAction(
   const baseEditor = await canEditTask(me.id, task);
   // A contributor who is not otherwise an editor — an explicit collaborator,
   // or anyone @mentioned in the discussion — may contribute the task's context
-  // (description) but nothing else. Any attempt to touch another field on the
-  // same submission is rejected below.
+  // (description) and latest status but nothing else. Any attempt to touch
+  // another field on the same submission is rejected below.
   const collaboratorOnly = !baseEditor && (await isTaskContributor(me.id, task.id));
   if (!baseEditor && !collaboratorOnly) {
     return fail('Only the task owner, creator, a collaborator, or a head of division can edit this task.', epoch);
   }
   if (collaboratorOnly) {
-    const editsBeyondDescription =
+    const editsBeyondContribute =
       parsed.data.name !== undefined ||
       parsed.data.dueDate !== undefined ||
       parsed.data.visibility !== undefined ||
       parsed.data.recurrenceRule !== undefined ||
       parsed.data.divisionId !== undefined ||
       parsed.data.subDivisionId !== undefined;
-    if (editsBeyondDescription) {
-      return fail('Collaborators can edit only the task context.', epoch);
+    if (editsBeyondContribute) {
+      return fail('Collaborators can edit only the task context and latest status.', epoch);
     }
   }
 
@@ -939,6 +949,13 @@ export async function updateTaskFieldsAction(
   if (parsed.data.description !== undefined && parsed.data.description !== (task.description ?? '')) {
     data.description = parsed.data.description.length > 0 ? parsed.data.description : null;
     events.push({ eventType: 'description_updated', payload: {} });
+  }
+  if (
+    parsed.data.latestStatus !== undefined &&
+    parsed.data.latestStatus !== (task.latestStatus ?? '')
+  ) {
+    data.latestStatus = parsed.data.latestStatus.length > 0 ? parsed.data.latestStatus : null;
+    events.push({ eventType: 'latest_status_updated', payload: {} });
   }
   if (parsed.data.dueDate !== undefined) {
     const next = parsed.data.dueDate ? parseDueDateInput(parsed.data.dueDate) : null;

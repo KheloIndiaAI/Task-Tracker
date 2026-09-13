@@ -110,6 +110,8 @@ function describeEvent(type: string, payload: Record<string, unknown> | null): s
       return `changed priority to ${PRIORITY_LABEL[String(payload.to)] ?? String(payload.to)}`;
     case 'description_updated':
       return 'updated the description';
+    case 'latest_status_updated':
+      return 'updated the latest status';
     case 'due_date_changed':
       return payload.to
         ? `set the due date to ${payload.to}`

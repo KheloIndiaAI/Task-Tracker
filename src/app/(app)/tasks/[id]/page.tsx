@@ -32,6 +32,7 @@ import { SectionActivity } from './_components/SectionActivity';
 import { SectionComments, type Mentionable } from './_components/SectionComments';
 import { SectionContext } from './_components/SectionContext';
 import { SectionDetails } from './_components/SectionDetails';
+import { SectionLatestStatus } from './_components/SectionLatestStatus';
 import { SectionSubtasks, type SubtaskDocument } from './_components/SectionSubtasks';
 import { StatusPicker } from './_components/StatusPicker';
 import { TaskTitleEditor } from './_components/TaskTitleEditor';
@@ -690,6 +691,12 @@ export default async function TaskDetailPage({ params }: PageProps) {
           Last edited {formatDistanceToNow(task.updatedAt, { addSuffix: true })}
         </p>
       </section>
+
+      <SectionLatestStatus
+        taskId={task.id}
+        latestStatus={task.latestStatus}
+        canEdit={canEditFields || isContributor}
+      />
 
       <SectionContext
         taskId={task.id}

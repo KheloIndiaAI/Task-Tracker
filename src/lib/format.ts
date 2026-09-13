@@ -1,6 +1,21 @@
 import { formatDateIST, formatTimeIST, istDayDiff, istTimeInput } from '@/lib/date';
 
 /**
+ * Word count for a free-text field with a word cap (e.g. a task's Latest
+ * status). Splits on any run of whitespace after trimming, so a
+ * whitespace-only string counts as zero words rather than one. Shared by the
+ * client component's live counter and the server action's validation, so the
+ * two can never disagree about what counts as a word.
+ */
+export function countWords(text: string): number {
+  const trimmed = text.trim();
+  return trimmed.length === 0 ? 0 : trimmed.split(/\s+/).length;
+}
+
+/** Word cap for a task's Latest status field — see SectionLatestStatus. */
+export const MAX_LATEST_STATUS_WORDS = 50;
+
+/**
  * Initials extractor.
  *   "Ravi Kumar"  → "RK"
  *   "OSD"         → "OS"
