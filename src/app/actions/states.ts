@@ -121,6 +121,13 @@ export type BusinessCardState = Base & { businessCardId?: string };
 export const INITIAL_BUSINESS_CARD_STATE: BusinessCardState = { ...ZERO };
 
 // ------------------------------------------------------------
+// Divisions (src/app/actions/divisions.ts)
+// ------------------------------------------------------------
+
+export type UpdateDivisionNoticeState = Base;
+export const INITIAL_DIVISION_NOTICE_STATE: UpdateDivisionNoticeState = { ...ZERO };
+
+// ------------------------------------------------------------
 // Division access delegations (src/app/actions/delegations.ts)
 // ------------------------------------------------------------
 

@@ -328,6 +328,11 @@ model Division {
   taskSeq             Int          @default(0) @map("task_seq")
   avatarColour        String       @map("avatar_colour")
   displayOrder        Int          @default(0) @map("display_order")
+  // Short, division-wide announcement shown between the division name and its
+  // task list on the grouped tasks list — see canEditDivisionNotice. Same
+  // 50-word cap and edit UX as a task's Latest status; a head power (Super
+  // Admin, OSD, the division's head, or an active delegate).
+  noticeBoard         String?      @map("notice_board")
 
   // Division-based RBAC: the user who acts as this division's head.
   // Head powers extend to users holding an active DivisionAccessDelegation.

@@ -159,6 +159,22 @@ export function canCreateDivisionTask(actor: RbacActor, divisionId: string): boo
 }
 
 /**
+ * Division notice board — a short, division-wide announcement shown between
+ * the division name and its task list on the grouped tasks list. Editing is
+ * a head power, same reach as `canCreateDivisionTask`: Super Admin, OSD, the
+ * division's head, or an active delegate. Kept as its own named rule (not a
+ * reuse of canCreateDivisionTask) since the two permissions are conceptually
+ * distinct and free to diverge later even though they agree today.
+ */
+export function canEditDivisionNotice(
+  actor: Pick<RbacActor, 'isSuperAdmin' | 'isOsd' | 'headedDivisionIds'>,
+  divisionId: string,
+): boolean {
+  if (actor.isSuperAdmin || actor.isOsd) return true;
+  return actor.headedDivisionIds.includes(divisionId);
+}
+
+/**
  * Who may set a task's JS Priority lane — the Daily / Weekly / Monthly pills on
  * the grouped tasks list, and the Priority Board's drag-and-drop.
  *

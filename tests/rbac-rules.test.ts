@@ -5,6 +5,7 @@ import {
   canAssignTaskTo,
   canCreateDivisionTask,
   canDelegateDivision,
+  canEditDivisionNotice,
   canManageTask,
   canTransferTaskTo,
   isEligibleDelegate,
@@ -270,6 +271,39 @@ describe('canCreateDivisionTask', () => {
     const member = actor({ divisionId: KI, headedDivisionIds: [], memberDivisionIds: [KI, NSDF] });
     expect(canCreateDivisionTask(member, NSDF)).toBe(false);
     expect(canCreateDivisionTask(member, KI)).toBe(false);
+  });
+});
+
+describe('canEditDivisionNotice', () => {
+  it('super admin edits any division notice board', () => {
+    const sa = actor({ isSuperAdmin: true, divisionId: OJS });
+    expect(canEditDivisionNotice(sa, MEDIA)).toBe(true);
+    expect(canEditDivisionNotice(sa, KI)).toBe(true);
+  });
+
+  it('OSD edits any division notice board', () => {
+    const osd = actor({ isOsd: true, divisionId: OJS });
+    expect(canEditDivisionNotice(osd, MEDIA)).toBe(true);
+    expect(canEditDivisionNotice(osd, KI)).toBe(true);
+  });
+
+  it('a head only within divisions they head — home does not count', () => {
+    const head = actor({ divisionId: ABD, headedDivisionIds: [NSDF] });
+    expect(canEditDivisionNotice(head, NSDF)).toBe(true);
+    expect(canEditDivisionNotice(head, ABD)).toBe(false);
+    expect(canEditDivisionNotice(head, KI)).toBe(false);
+  });
+
+  it('an active delegate gains the power for the delegated division', () => {
+    const delegate = actor({ divisionId: KI, headedDivisionIds: [SGM] });
+    expect(canEditDivisionNotice(delegate, SGM)).toBe(true);
+    expect(canEditDivisionNotice(delegate, KI)).toBe(false);
+  });
+
+  it('membership does NOT grant notice-board edit rights (a non-head member)', () => {
+    const member = actor({ divisionId: KI, headedDivisionIds: [], memberDivisionIds: [KI, NSDF] });
+    expect(canEditDivisionNotice(member, NSDF)).toBe(false);
+    expect(canEditDivisionNotice(member, KI)).toBe(false);
   });
 });
 

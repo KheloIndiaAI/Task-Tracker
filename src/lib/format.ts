@@ -16,6 +16,13 @@ export function countWords(text: string): number {
 export const MAX_LATEST_STATUS_WORDS = 50;
 
 /**
+ * Word cap for a division's Notice board field — see DivisionNoticeBoard.
+ * Deliberately the same number as MAX_LATEST_STATUS_WORDS (same UX, by
+ * request) but kept as its own named constant for clarity at the call site.
+ */
+export const MAX_DIVISION_NOTICE_WORDS = 50;
+
+/**
  * Initials extractor.
  *   "Ravi Kumar"  → "RK"
  *   "OSD"         → "OS"

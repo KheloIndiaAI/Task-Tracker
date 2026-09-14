@@ -6,7 +6,7 @@ import { auth } from '@/lib/auth';
 import { isMediaAndIt } from '@/lib/divisions';
 import { prisma } from '@/lib/db';
 import { formatDue, initialsOf } from '@/lib/format';
-import { canManageTask, canSetJsPriorityLane, getHeadedDivisionIds } from '@/lib/rbac';
+import { canEditDivisionNotice, canManageTask, canSetJsPriorityLane, getHeadedDivisionIds } from '@/lib/rbac';
 import { getPmuTeamMemberIds } from '@/lib/pmu-team';
 import { getContributorTaskIds } from '@/lib/task-participants';
 import { resolveGroupByDivision } from '@/lib/task-grouping-shared';
@@ -16,6 +16,7 @@ import { fetchTaskCounts, fetchVisibleTasks, getPmuParentDivisionHeadId, type Ta
 import { DivisionControls } from './_components/DivisionControls';
 import { DivisionCardsToggle } from './_components/DivisionCardsToggle';
 import { DivisionLaneBoard, type LaneBoardTask } from './_components/DivisionLaneBoard';
+import { DivisionNoticeBoard } from './_components/DivisionNoticeBoard';
 import { FilterChips } from './_components/FilterChips';
 import { ReportGenerationDialog } from './_components/ReportGenerationDialog';
 import { StatsStrip } from './_components/StatsStrip';
@@ -109,8 +110,10 @@ export default async function TasksPage({ searchParams }: PageProps) {
     fetchTaskCounts(me.id),
     prisma.division.findMany({
       // Divisions and their PMUs, so PMU-owned tasks are filterable too.
+      // noticeBoard rides along here (not a separate query) purely for the
+      // grouped view's Notice board panel — see DivisionNoticeBoard below.
       where: { kind: { in: ['division', 'pmu'] } },
-      select: { id: true, name: true },
+      select: { id: true, name: true, noticeBoard: true },
       orderBy: [{ kind: 'asc' }, { displayOrder: 'asc' }, { name: 'asc' }],
     }),
     me.isPmu && me.pmuId
@@ -147,6 +150,14 @@ export default async function TasksPage({ searchParams }: PageProps) {
   // Super Admin, OSD, and any division head always have this; canGenerateReports
   // only ever widens it further — see canAccessReportGeneration's doc comment.
   const canAccessReports = canAccessReportGeneration(me, headedDivisionIds);
+  // Notice board edit rights are per-division (a head power) — same actor
+  // shape canEditDivisionNotice expects, reused per group below.
+  const noticeBoardActor = {
+    isSuperAdmin: me.isSuperAdmin,
+    isOsd: me.hierarchySlot === 'osd',
+    headedDivisionIds,
+  };
+  const noticeByDivision = new Map(divisions.map((d) => [d.id, d.noticeBoard]));
   const permCaller = {
     id: me.id,
     isSuperAdmin: me.isSuperAdmin,
@@ -278,6 +289,11 @@ export default async function TasksPage({ searchParams }: PageProps) {
                       count={group.tasks.length}
                       unit="task"
                     >
+                      <DivisionNoticeBoard
+                        divisionId={group.divisionId}
+                        notice={noticeByDivision.get(group.divisionId) ?? null}
+                        canEdit={canEditDivisionNotice(noticeBoardActor, group.divisionId)}
+                      />
                       <DivisionLaneBoard
                         tasks={toLaneBoardTasks(group.tasks, permCaller, contributorTaskIds)}
                         canCurate={canSetJsPriorityLane(permCaller, {
