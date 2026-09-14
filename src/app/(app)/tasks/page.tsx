@@ -479,7 +479,11 @@ function toLaneBoardTasks(
       id: t.id,
       name: t.name,
       lane:
-        lane === 'today' || lane === 'week' || lane === 'fortnight' || lane === 'month'
+        lane === 'today' ||
+        lane === 'week' ||
+        lane === 'fortnight' ||
+        lane === 'month' ||
+        lane === 'watchlist'
           ? lane
           : null,
       needsAttention: formatDue(t.dueDate).tone === 'overdue' || t.priority === 'urgent',

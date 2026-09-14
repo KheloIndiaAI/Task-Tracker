@@ -14,6 +14,7 @@ const OPTIONS: { value: PillJsLane | 'none'; label: string; sub: string }[] = [
   { value: 'week', label: 'This week', sub: 'Lands inside the week' },
   { value: 'month', label: 'This month', sub: 'On the monthly horizon' },
   { value: 'fortnight', label: 'Fortnight', sub: 'Lands inside two weeks' },
+  { value: 'watchlist', label: 'Watchlist', sub: 'Worth tracking, no horizon yet' },
   { value: 'none', label: 'Remove from board', sub: 'Not on JS Priority' },
 ];
 
@@ -22,6 +23,7 @@ const LANE_LABEL: Record<PillJsLane, string> = {
   week: 'this week',
   month: 'this month',
   fortnight: 'fortnight',
+  watchlist: 'watchlist',
 };
 
 type JsLanePickerProps = {

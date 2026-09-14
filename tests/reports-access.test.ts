@@ -32,11 +32,12 @@ describe('isReportCadence', () => {
     expect(isReportCadence('week')).toBe(true);
     expect(isReportCadence('fortnight')).toBe(true);
     expect(isReportCadence('month')).toBe(true);
+    expect(isReportCadence('watchlist')).toBe(true);
   });
 
   it('rejects anything else', () => {
     expect(isReportCadence('all')).toBe(false);
     expect(isReportCadence('')).toBe(false);
-    expect(isReportCadence('watchlist')).toBe(false);
+    expect(isReportCadence('daily')).toBe(false);
   });
 });

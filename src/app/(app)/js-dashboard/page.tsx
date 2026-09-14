@@ -29,9 +29,10 @@ const LANE_META: Record<PillJsLane, { label: string; icon: string }> = {
   week: { label: 'This week', icon: 'ti-calendar-week' },
   month: { label: 'This month', icon: 'ti-calendar-month' },
   fortnight: { label: 'Fortnight', icon: 'ti-calendar-due' },
+  watchlist: { label: 'Watchlist', icon: 'ti-eye' },
 };
 
-const LANES: PillJsLane[] = ['today', 'week', 'month', 'fortnight'];
+const LANES: PillJsLane[] = ['today', 'week', 'month', 'fortnight', 'watchlist'];
 
 export default async function JsDashboardPage() {
   const session = await auth();
@@ -123,6 +124,7 @@ export default async function JsDashboardPage() {
     week: [],
     month: [],
     fortnight: [],
+    watchlist: [],
   };
   for (const t of allPriorityTasks) {
     if (!t.jsPriorityLane) continue;
@@ -192,7 +194,7 @@ export default async function JsDashboardPage() {
           </Link>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
           {LANES.map((lane) => {
             const tasks = tasksByLane[lane];
             const meta = LANE_META[lane];

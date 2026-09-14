@@ -19,7 +19,7 @@ export type PillStatusTone =
 
 export type PillPriorityTone = 'low' | 'medium' | 'high' | 'urgent';
 
-export type PillJsLane = 'today' | 'week' | 'month' | 'fortnight';
+export type PillJsLane = 'today' | 'week' | 'month' | 'fortnight' | 'watchlist';
 
 type CommonProps = {
   className?: string;
@@ -101,6 +101,7 @@ const JS_LABEL: Record<PillJsLane, string> = {
   week: 'JS — this week',
   month: 'JS — this month',
   fortnight: 'JS — fortnight',
+  watchlist: 'JS — watchlist',
 };
 
 const PILL_BASE =

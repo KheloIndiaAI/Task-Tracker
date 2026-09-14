@@ -12,7 +12,7 @@ import { AccordionProvider } from './_components/AccordionState';
 
 import type { PillJsLane } from '@/components/ui/Pill';
 
-const LANES: PillJsLane[] = ['today', 'week', 'month', 'fortnight'];
+const LANES: PillJsLane[] = ['today', 'week', 'month', 'fortnight', 'watchlist'];
 
 export default async function PriorityBoardPage() {
   const session = await auth();
@@ -53,6 +53,7 @@ export default async function PriorityBoardPage() {
     week: [],
     month: [],
     fortnight: [],
+    watchlist: [],
   };
 
   for (const t of tasks) {

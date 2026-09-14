@@ -1972,6 +1972,7 @@ const setJsLaneSchema = z.object({
       z.literal('week'),
       z.literal('month'),
       z.literal('fortnight'),
+      z.literal('watchlist'),
       z.literal(''),
     ])
     .transform((v) => (v === '' ? null : v)),
@@ -2106,7 +2107,7 @@ export async function setJsPriorityLaneAction(
 // ============================================================
 
 const reorderSchema = z.object({
-  lane: z.enum(['today', 'week', 'month', 'fortnight']),
+  lane: z.enum(['today', 'week', 'month', 'fortnight', 'watchlist']),
   taskIds: z.array(z.string().uuid()),
 });
 

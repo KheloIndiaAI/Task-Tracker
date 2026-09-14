@@ -16,9 +16,10 @@ import { useAccordion } from './AccordionState';
 import type { PillJsLane } from '@/components/ui/Pill';
 
 /**
- * JS Priority Board — per PRD §5.3.
+ * JS Priority Board — per PRD §5.3, since extended with a fifth (Watchlist)
+ * lane.
  *
- * Four lanes visible simultaneously, horizontally swipeable on narrow
+ * Five lanes visible simultaneously, horizontally swipeable on narrow
  * viewports (snap scrolling). Cards drag between lanes when the caller is
  * OSD or Super Admin; everyone else sees the board read-only.
  *
@@ -65,6 +66,7 @@ const LANES: { id: PillJsLane; label: string; sub: string }[] = [
   { id: 'week', label: 'This week', sub: 'Lands inside the week' },
   { id: 'month', label: 'This month', sub: 'On the monthly horizon' },
   { id: 'fortnight', label: 'Fortnight', sub: 'Lands inside two weeks' },
+  { id: 'watchlist', label: 'Watchlist', sub: 'Worth tracking, no horizon yet' },
 ];
 
 const LANE_SHORT: Record<PillJsLane, string> = {
@@ -72,6 +74,7 @@ const LANE_SHORT: Record<PillJsLane, string> = {
   week: 'Week',
   month: 'Month',
   fortnight: 'Fort',
+  watchlist: 'Watch',
 };
 
 /**
@@ -102,6 +105,13 @@ const LANE_TINT: Partial<Record<PillJsLane, React.CSSProperties>> = {
     background:
       'linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 60%, transparent) 0%, color-mix(in srgb, var(--accent-soft) 32%, transparent) 100%)',
   },
+  // A calm, unused tone (not indigo, not amber) for the newest lane — reads
+  // as "worth keeping an eye on" rather than a specific horizon or curated
+  // priority. Matches the Watchlist column's own colour on the tasks list.
+  watchlist: {
+    background:
+      'linear-gradient(180deg, color-mix(in srgb, var(--info-soft) 60%, transparent) 0%, color-mix(in srgb, var(--info-soft) 32%, transparent) 100%)',
+  },
 };
 
 const LANE_BORDER: Record<PillJsLane, string> = {
@@ -109,6 +119,7 @@ const LANE_BORDER: Record<PillJsLane, string> = {
   week: 'border border-primary-line/70',
   month: 'border border-primary-line/40',
   fortnight: '', // .glass-card carries its own border
+  watchlist: 'border border-info/30',
 };
 
 /** Touch-friendly Sortable options: press-and-hold to drag, so a swipe
@@ -293,10 +304,10 @@ export function Board({ tasksByLane, canCurate }: BoardProps) {
         className={cn(
           'board-print-area grid gap-3 md:gap-4',
           // Mobile: a single vertical column of collapsible accordion panels.
-          // Tablet: 2 columns; laptop+: the classic 4-column board. Print
-          // always lays out all four lanes side by side regardless of the
-          // screen size the print was triggered from.
-          'grid-cols-1 md:grid-cols-2 lg:grid-cols-4 print:grid-cols-4 print:gap-2',
+          // Tablet: 2 columns; laptop+: all five lanes side by side. Print
+          // always lays out every lane side by side regardless of the screen
+          // size the print was triggered from.
+          'grid-cols-1 md:grid-cols-2 lg:grid-cols-5 print:grid-cols-5 print:gap-2',
         )}
       >
         {LANES.map((lane) => (

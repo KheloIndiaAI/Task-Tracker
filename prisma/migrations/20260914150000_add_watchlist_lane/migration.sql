@@ -1,0 +1,11 @@
+-- Add "watchlist" back to the JS Priority Board's lanes — this time as a
+-- genuine fifth lane alongside Daily / Weekly / Fortnightly / Monthly, not a
+-- rename (see 20260908120000_rename_watchlist_lane_to_fortnight, which
+-- renamed the ORIGINAL watchlist lane to "fortnight"). Declared last, so it
+-- sorts after Monthly on both the JS Priority Board and the tasks list.
+--
+-- ADD VALUE IF NOT EXISTS is safe to re-run and on a database that already
+-- carries this value from `db push` drift. Must be the only statement
+-- touching this enum in the migration — PostgreSQL does not allow a newly
+-- added enum value to be used in the same transaction it was added in.
+ALTER TYPE "JsPriorityLane" ADD VALUE IF NOT EXISTS 'watchlist';

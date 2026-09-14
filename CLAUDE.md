@@ -162,7 +162,7 @@ The system has exactly two accent colours, each with a fixed meaning. **Never sw
 
 If you are about to use amber for anything that isn't a JS Priority signal, stop. If you are about to use indigo for anything that isn't Super Admin or a Timeline File, stop. Status and priority have their own colours (see [docs/COLOUR_TOKENS.css](docs/COLOUR_TOKENS.css) §1.3).
 
-**Documented exception (2026-07-09):** the JS Priority Board's lane *background* washes intentionally invert this rule — Today/This week/This month use indigo, Watchlist uses amber (`LANE_TINT` in `Board.tsx`). This was an explicit product decision for that one board. The JS Priority badge, lane counts, and left-stripe on JS-priority task cards elsewhere are unaffected and stay amber.
+**Documented exception (2026-07-09):** the JS Priority Board's lane *background* washes intentionally invert this rule — Today/This week/This month use indigo, Fortnight uses amber (`LANE_TINT` in `Board.tsx`). This was an explicit product decision for that one board. The JS Priority badge, lane counts, and left-stripe on JS-priority task cards elsewhere are unaffected and stay amber. The fifth lane, Watchlist (added 2026-09-14, distinct from the original "watchlist" lane renamed to Fortnight on 2026-09-08 — see `prisma/migrations`), uses `--info` instead of either accent, since it is neither the board's structural signal nor a JS-curated priority in the same sense.
 
 ## Permission model summary
 

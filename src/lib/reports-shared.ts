@@ -35,10 +35,10 @@ export function canAccessReportGeneration(
   );
 }
 
-/** The four JS Priority lanes as report cadences, in display order. Reuses
+/** The five JS Priority lanes as report cadences, in display order. Reuses
  *  the board's own LaneKey values so the report and the board can never
  *  disagree about what a task's cadence is. */
-export const REPORT_CADENCES = ['today', 'week', 'fortnight', 'month'] as const;
+export const REPORT_CADENCES = ['today', 'week', 'fortnight', 'month', 'watchlist'] as const;
 export type ReportCadence = (typeof REPORT_CADENCES)[number];
 
 /**
@@ -52,6 +52,7 @@ export const REPORT_CADENCE_LABEL: Record<ReportCadence, string> = {
   week: 'Weekly',
   fortnight: 'Fortnightly',
   month: 'Monthly',
+  watchlist: 'Watchlist',
 };
 
 export function isReportCadence(v: string): v is ReportCadence {

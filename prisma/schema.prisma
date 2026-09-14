@@ -75,6 +75,10 @@ enum JsPriorityLane {
   // does not move it), so this still sorts last — which is why the board shows
   // it last while the tasks list orders its columns D / W / F / M by horizon.
   fortnight
+  // Added back 2026-09-14 as a genuine fifth lane (not a rename this time) —
+  // a place for tasks worth tracking without a specific D/W/F/M horizon.
+  // Sorts last: both boards show it to the right of Monthly.
+  watchlist
 }
 
 enum Visibility {

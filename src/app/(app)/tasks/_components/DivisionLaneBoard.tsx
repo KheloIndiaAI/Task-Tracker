@@ -16,14 +16,16 @@ import { countWords, MAX_LATEST_STATUS_WORDS } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 /**
- * Daily / Weekly / Fortnight / Monthly columns for one division on the grouped
- * tasks list.
+ * Daily / Weekly / Fortnight / Monthly / Watchlist columns for one division on
+ * the grouped tasks list.
  *
- * These four columns ARE the JS Priority Board's lanes, read from the same
+ * These five columns ARE the JS Priority Board's lanes, read from the same
  * `tasks.js_priority_lane` column — one field, two surfaces. So clicking a pill
  * here also puts the task on the board, which is the point: a division buckets
  * its own work here, and the JS sees it there. (Fortnight is the lane the board
- * used to call Watchlist; it was renamed rather than adding a fifth lane.)
+ * used to call Watchlist, renamed in 2026-09; Watchlist itself returned later
+ * as a genuine fifth lane, for work worth tracking without a specific
+ * Daily/Weekly/Fortnight/Monthly horizon.)
  *
  * A task in no lane sits in the "Not scheduled" strip under the columns with no
  * pill lit.
@@ -39,7 +41,7 @@ import { cn } from '@/lib/utils';
  * would refuse.
  */
 
-export type LaneKey = 'today' | 'week' | 'fortnight' | 'month';
+export type LaneKey = 'today' | 'week' | 'fortnight' | 'month' | 'watchlist';
 
 export type LaneBoardTask = {
   id: string;
@@ -112,19 +114,34 @@ const COLUMNS: {
     pillOn: 'bg-primary text-white',
     rowTint: 'bg-primary-soft/35',
   },
+  {
+    // A calm, unused-elsewhere tone — the other four already claim
+    // medium/success/high/primary, and info reads as "worth keeping an eye
+    // on" rather than any particular urgency.
+    key: 'watchlist',
+    label: 'Watchlist',
+    icon: 'ti-eye',
+    head: 'bg-info-soft text-info',
+    pillOn: 'bg-info text-white',
+    rowTint: 'bg-info-soft/35',
+  },
 ];
 
+// Watchlist gets a bookmark glyph rather than a letter — "W" is already
+// Weekly's, and a bookmark echoes the JS Priority pill's own icon elsewhere.
 const PILL_LETTER: Record<LaneKey, string> = {
   today: 'D',
   week: 'W',
   fortnight: 'F',
   month: 'M',
+  watchlist: '★',
 };
 const PILL_TITLE: Record<LaneKey, string> = {
   today: 'Daily',
   week: 'Weekly',
   fortnight: 'FortNight',
   month: 'Monthly',
+  watchlist: 'Watchlist',
 };
 
 /** Columns in view past the md breakpoint; the rest are a slide away. */
@@ -200,19 +217,22 @@ export function DivisionLaneBoard({
     week: tasks.filter((t) => t.lane === 'week'),
     fortnight: tasks.filter((t) => t.lane === 'fortnight'),
     month: tasks.filter((t) => t.lane === 'month'),
+    watchlist: tasks.filter((t) => t.lane === 'watchlist'),
   };
   const unscheduled = tasks.filter((t) => t.lane === null);
 
   // Serial numbers run continuously across the columns in display order —
-  // Daily, Weekly, Fortnight, Monthly, then the unscheduled strip — so every
-  // task in the division carries exactly one number.
+  // Daily, Weekly, Fortnight, Monthly, Watchlist, then the unscheduled strip —
+  // so every task in the division carries exactly one number.
   const offsets = {
     today: 0,
     week: byLane.today.length,
     fortnight: byLane.today.length + byLane.week.length,
     month: byLane.today.length + byLane.week.length + byLane.fortnight.length,
+    watchlist:
+      byLane.today.length + byLane.week.length + byLane.fortnight.length + byLane.month.length,
   };
-  const unscheduledOffset = offsets.month + byLane.month.length;
+  const unscheduledOffset = offsets.watchlist + byLane.watchlist.length;
 
   const rowProps = {
     canCurate,
@@ -305,7 +325,7 @@ export function DivisionLaneBoard({
 
                     {items.length === 0 ? (
                       <p className="px-2.5 py-4 text-center text-[11px] italic text-ink-3">
-                        {canCurate ? 'Tap D, W, F or M below to add a task' : 'Nothing here yet'}
+                        {canCurate ? 'Tap the clock below to add a task' : 'Nothing here yet'}
                       </p>
                     ) : (
                       <ul>
@@ -398,8 +418,8 @@ const PILL_BASE =
  *
  * The row is split down the middle: the left half is a link that opens the
  * task, the right half is the scheduler. At rest the scheduler is a single
- * clock icon — four pills on every row was a wall of controls that buried the
- * task names. Tapping it slides D / W / F / M in; picking one files the task
+ * clock icon — five pills on every row was a wall of controls that buried the
+ * task names. Tapping it slides the lane pills in; picking one files the task
  * and slides them back out, briefly confirming which list it went to.
  *
  * Readers who cannot curate get no clock and no dead pills — just a static
@@ -407,9 +427,10 @@ const PILL_BASE =
  * nowhere.
  *
  * `showFields` adds the Status and JS Comment lines below the name, plus the
- * column's row tint — set only for rows inside a Daily/Weekly/Fortnight/Monthly
- * column, never for "Not scheduled": those two fields describe where a task
- * stands on its schedule, which an unscheduled task does not have yet.
+ * column's row tint — set only for rows inside a lane column (Daily / Weekly /
+ * Fortnight / Monthly / Watchlist), never for "Not scheduled": those two
+ * fields describe where a task stands on its schedule, which an unscheduled
+ * task does not have yet.
  */
 function LaneRow({
   task,
