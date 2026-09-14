@@ -1,11 +1,10 @@
 /**
- * Tasks list — the Group-by-division view rule, client-safe.
+ * Tasks list — the Group-by-division view rule.
  *
- * Kept free of any server-only import so the server page
- * (src/app/(app)/tasks/page.tsx) and the client control
- * (tasks/_components/DivisionControls.tsx) resolve the view from ONE rule.
- * They used to duplicate it, which risks the button lighting up out of step
- * with the list it controls.
+ * Grouping no longer has an on-page toggle (removed by request — it only
+ * ever showed the state that was already the default), but the tri-state
+ * `?group=` param this resolves is still honoured for anyone who links in
+ * with it explicitly.
  */
 
 /** What `?group=` may say. Absent means "use the caller's default". */
@@ -35,14 +34,4 @@ export function resolveGroupByDivision(
   if (group === 'division') return true;
   if (group === 'none') return false;
   return defaultGrouped;
-}
-
-/**
- * The value the toggle should write when flipping to `next`. Turning grouping
- * off is written explicitly as 'none' when it is on by default; otherwise the
- * param is cleared (empty string) to keep the URL clean.
- */
-export function groupParamFor(next: boolean, defaultGrouped: boolean): string {
-  if (next) return 'division';
-  return defaultGrouped ? 'none' : '';
 }

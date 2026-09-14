@@ -17,7 +17,6 @@ import { DivisionControls } from './_components/DivisionControls';
 import { DivisionCardsToggle } from './_components/DivisionCardsToggle';
 import { DivisionLaneBoard, type LaneBoardTask } from './_components/DivisionLaneBoard';
 import { DivisionNoticeBoard } from './_components/DivisionNoticeBoard';
-import { FilterChips } from './_components/FilterChips';
 import { ReportGenerationDialog } from './_components/ReportGenerationDialog';
 import { StatsStrip } from './_components/StatsStrip';
 import { TaskListItem } from './_components/TaskListItem';
@@ -231,15 +230,12 @@ export default async function TasksPage({ searchParams }: PageProps) {
             </div>
           </div>
 
-          <FilterChips active={filter} />
-          <Suspense fallback={null}>
-            <DivisionControls
-              divisions={divisions}
-              canGroupByDivision={canGroupByDivision}
-              defaultGroupByDivision={defaultGroupByDivision}
-            />
-          </Suspense>
-          <StatsStrip counts={counts} />
+          <div className="flex items-center justify-between gap-2 mt-2">
+            <Suspense fallback={null}>
+              <DivisionControls divisions={divisions} />
+            </Suspense>
+            <StatsStrip counts={counts} />
+          </div>
         </div>
 
         {/* Task list — Quick Search overlays matching cards in this panel while

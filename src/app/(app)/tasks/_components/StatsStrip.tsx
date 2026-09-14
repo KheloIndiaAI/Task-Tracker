@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 
 import { Sheet } from '@/components/ui';
@@ -22,19 +22,44 @@ const SHEET_META: Record<Kind, { title: string; subtitle: string; empty: string 
 };
 
 /**
- * Three-stat strip on the tasks page. Each tile is a button that opens a
- * drill-down popup (lazily fetched, visibility-scoped): Due today / Overdue
- * list the tasks (each opens its detail), Open tasks shows the per-division /
- * sub-division counts. The panel itself is a frosted glass card.
+ * KPI stats, tucked behind a small trigger pill rather than shown inline —
+ * the numbers are useful on demand, not something that should push the task
+ * list down on every visit. The pill itself carries the one number worth
+ * seeing at a glance (open tasks); tapping it floats in the full panel.
+ *
+ * Each tile inside the panel still opens its own drill-down popup (lazily
+ * fetched, visibility-scoped) exactly as before: Due today / Overdue /
+ * Completed list the tasks (each opens its detail), Open tasks shows the
+ * per-division / sub-division counts.
  */
 export function StatsStrip({ counts }: StatsStripProps) {
+  const [panelOpen, setPanelOpen] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+
   const [kind, setKind] = useState<Kind | null>(null);
   const [tasks, setTasks] = useState<StatTaskRow[] | null>(null);
   const [divisions, setDivisions] = useState<DivisionOpenBreakdown[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!panelOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) setPanelOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPanelOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [panelOpen]);
+
   const openSheet = (next: Kind) => {
+    setPanelOpen(false);
     setKind(next);
     setError(null);
     setLoading(true);
@@ -67,33 +92,43 @@ export function StatsStrip({ counts }: StatsStripProps) {
   ];
 
   return (
-    <>
-      {/* Mobile: four separate summary cards (2×2). */}
-      <div className="mt-4 grid grid-cols-2 gap-2.5 md:hidden">
-        {items.map((it) => (
-          <StatButton
-            key={it.label}
-            label={it.label}
-            value={it.value}
-            tone={it.tone}
-            variant="card"
-            onClick={() => openSheet(it.kind)}
-          />
-        ))}
-      </div>
-      {/* Desktop: one frosted glass card holding the four tiles. */}
-      <div className="glass-card mt-4 hidden grid-cols-4 gap-6 rounded-2xl p-5 md:grid">
-        {items.map((it) => (
-          <StatButton
-            key={it.label}
-            label={it.label}
-            value={it.value}
-            tone={it.tone}
-            variant="tile"
-            onClick={() => openSheet(it.kind)}
-          />
-        ))}
-      </div>
+    <div ref={panelRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setPanelOpen((v) => !v)}
+        aria-expanded={panelOpen}
+        aria-haspopup="true"
+        className={cn(
+          'inline-flex items-center gap-1.5 px-3 py-[5px] rounded-[14px] text-[12px] font-medium border transition-colors',
+          panelOpen
+            ? 'bg-ink text-onink border-ink'
+            : 'bg-panel text-ink-2 border-line hover:border-ink-4',
+        )}
+      >
+        <i className="ti ti-chart-bar text-[13px]" aria-hidden="true" />
+        KPIs
+        <span className="tabular-nums">{counts.open}</span>
+        <i
+          className={cn('ti text-[11px] transition-transform', panelOpen ? 'ti-chevron-up' : 'ti-chevron-down')}
+          aria-hidden="true"
+        />
+      </button>
+
+      {panelOpen ? (
+        <div className="absolute right-0 top-full mt-1 z-30 w-[min(360px,calc(100vw-2rem))] rounded-2xl border border-line bg-panel shadow-xl p-3.5">
+          <div className="grid grid-cols-2 gap-2.5">
+            {items.map((it) => (
+              <StatButton
+                key={it.label}
+                label={it.label}
+                value={it.value}
+                tone={it.tone}
+                onClick={() => openSheet(it.kind)}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <Sheet open={kind !== null} onClose={close} title={meta?.title} subtitle={meta?.subtitle}>
         {kind === 'divisions' ? (
@@ -114,7 +149,7 @@ export function StatsStrip({ counts }: StatsStripProps) {
           />
         ) : null}
       </Sheet>
-    </>
+    </div>
   );
 }
 
@@ -126,14 +161,11 @@ function StatButton({
   label,
   value,
   tone = 'ink',
-  variant = 'tile',
   onClick,
 }: {
   label: string;
   value: number;
   tone?: 'ink' | 'accent' | 'urgent' | 'success';
-  /** 'card' = a standalone bordered card (mobile); 'tile' = inside the glass card (desktop). */
-  variant?: 'tile' | 'card';
   onClick: () => void;
 }) {
   const toneClass =
@@ -148,23 +180,10 @@ function StatButton({
     <button
       type="button"
       onClick={onClick}
-      className={cn(
-        'group text-left transition-[background-color,border-color,box-shadow] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink',
-        variant === 'card'
-          ? 'rounded-2xl border border-line bg-panel p-3.5 shadow-card hover:border-ink-4 hover:shadow-card-hover'
-          : '-m-1 rounded-xl p-1 hover:bg-line-2',
-      )}
+      className="group text-left rounded-xl border border-line bg-panel p-3 transition-colors hover:border-ink-4 hover:bg-bg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
     >
-      <div
-        className={cn(
-          'font-serif leading-none font-medium',
-          variant === 'card' ? 'text-[24px]' : 'text-[22px] md:text-[28px]',
-          toneClass,
-        )}
-      >
-        {value}
-      </div>
-      <div className="mt-1 inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-[0.04em] text-ink-3 md:text-[11px]">
+      <div className={cn('font-serif leading-none font-medium text-[22px]', toneClass)}>{value}</div>
+      <div className="mt-1 inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-[0.04em] text-ink-3">
         {label}
         <i
           className="ti ti-chevron-right text-[11px] text-ink-4 transition-transform group-hover:translate-x-0.5"
