@@ -46,6 +46,10 @@ export type LaneKey = 'today' | 'week' | 'fortnight' | 'month' | 'watchlist';
 export type LaneBoardTask = {
   id: string;
   name: string;
+  /** Which of the division's sub-divisions this task belongs to, if any — the
+   *  DivisionSubFilter wrapper filters the array passed in by this before it
+   *  ever reaches this component, so nothing here needs to know about it. */
+  subDivisionId: string | null;
   /** null means the task sits in no lane at all — every lane has a column. */
   lane: LaneKey | null;
   /** Overdue, or urgent priority — drawn in the urgent tone, as on the board. */

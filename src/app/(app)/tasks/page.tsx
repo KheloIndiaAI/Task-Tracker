@@ -1,7 +1,7 @@
 import { Suspense } from 'react';
 import { redirect } from 'next/navigation';
 
-import { PullToRefresh } from '@/components/ui';
+import { PullToRefresh, type TaskCardInteractiveProps } from '@/components/ui';
 import { auth } from '@/lib/auth';
 import { isMediaAndIt } from '@/lib/divisions';
 import { prisma } from '@/lib/db';
@@ -14,9 +14,9 @@ import { canAccessReportGeneration } from '@/lib/reports-shared';
 import { fetchTaskCounts, fetchVisibleTasks, getPmuParentDivisionHeadId, type TaskFilter, type TaskSort } from '@/lib/visibility';
 
 import { DivisionControls } from './_components/DivisionControls';
-import { DivisionCardsToggle } from './_components/DivisionCardsToggle';
-import { DivisionLaneBoard, type LaneBoardTask } from './_components/DivisionLaneBoard';
+import { type LaneBoardTask } from './_components/DivisionLaneBoard';
 import { DivisionNoticeBoard } from './_components/DivisionNoticeBoard';
+import { DivisionSubFilter } from './_components/DivisionSubFilter';
 import { ReportGenerationDialog } from './_components/ReportGenerationDialog';
 import { StatsStrip } from './_components/StatsStrip';
 import { TaskListItem } from './_components/TaskListItem';
@@ -108,11 +108,20 @@ export default async function TasksPage({ searchParams }: PageProps) {
     fetchVisibleTasks({ callerId: me.id, filter, divisionId: divisionFilter || undefined, sort }),
     fetchTaskCounts(me.id),
     prisma.division.findMany({
-      // Divisions and their PMUs, so PMU-owned tasks are filterable too.
-      // noticeBoard rides along here (not a separate query) purely for the
-      // grouped view's Notice board panel — see DivisionNoticeBoard below.
-      where: { kind: { in: ['division', 'pmu'] } },
-      select: { id: true, name: true, noticeBoard: true },
+      // Divisions, their PMUs (so PMU-owned tasks are filterable too), and
+      // sub-divisions (for the per-card sub-division/PMU filter pills below
+      // — see childrenByDivision). noticeBoard rides along here (not a
+      // separate query) purely for the grouped view's Notice board panel —
+      // see DivisionNoticeBoard below.
+      where: { kind: { in: ['division', 'pmu', 'sub_division'] } },
+      select: {
+        id: true,
+        name: true,
+        kind: true,
+        parentId: true,
+        pmuParentDivisionId: true,
+        noticeBoard: true,
+      },
       orderBy: [{ kind: 'asc' }, { displayOrder: 'asc' }, { name: 'asc' }],
     }),
     me.isPmu && me.pmuId
@@ -157,6 +166,34 @@ export default async function TasksPage({ searchParams }: PageProps) {
     headedDivisionIds,
   };
   const noticeByDivision = new Map(divisions.map((d) => [d.id, d.noticeBoard]));
+  // The Division filter dropdown and the report dialog only ever offered
+  // top-level divisions + PMUs — sub-divisions rode along in the same query
+  // above purely to build childrenByDivision below, so they're filtered back
+  // out here rather than widening those two unrelated pickers.
+  const topLevelDivisions = divisions
+    .filter((d) => d.kind === 'division' || d.kind === 'pmu')
+    .map((d) => ({ id: d.id, name: d.name }));
+  // Per-division sub-division + PMU pills on the grouped view (DivisionSubFilter
+  // below) — a PMU's parent is its own pmuParentDivisionId, falling back to
+  // parentId, same resolution getPmuDivisionIdsFor uses elsewhere.
+  const childrenByDivision = new Map<
+    string,
+    { subDivisions: { id: string; name: string }[]; pmus: { id: string; name: string }[] }
+  >();
+  for (const d of divisions) {
+    if (d.kind === 'sub_division' && d.parentId) {
+      const entry = childrenByDivision.get(d.parentId) ?? { subDivisions: [], pmus: [] };
+      entry.subDivisions.push({ id: d.id, name: d.name });
+      childrenByDivision.set(d.parentId, entry);
+    } else if (d.kind === 'pmu') {
+      const parentId = d.pmuParentDivisionId ?? d.parentId;
+      if (parentId) {
+        const entry = childrenByDivision.get(parentId) ?? { subDivisions: [], pmus: [] };
+        entry.pmus.push({ id: d.id, name: d.name });
+        childrenByDivision.set(parentId, entry);
+      }
+    }
+  }
   const permCaller = {
     id: me.id,
     isSuperAdmin: me.isSuperAdmin,
@@ -223,7 +260,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
               </h1>
             </div>
             <div className="flex items-center gap-2">
-              {canAccessReports ? <ReportGenerationDialog divisions={divisions} /> : null}
+              {canAccessReports ? <ReportGenerationDialog divisions={topLevelDivisions} /> : null}
               <div className="hidden md:block">
                 <QuickCreatePrimary />
               </div>
@@ -232,7 +269,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
 
           <div className="flex items-center justify-between gap-2 mt-2">
             <Suspense fallback={null}>
-              <DivisionControls divisions={divisions} />
+              <DivisionControls divisions={topLevelDivisions} />
             </Suspense>
             <StatsStrip counts={counts} />
           </div>
@@ -290,48 +327,22 @@ export default async function TasksPage({ searchParams }: PageProps) {
                         notice={noticeByDivision.get(group.divisionId) ?? null}
                         canEdit={canEditDivisionNotice(noticeBoardActor, group.divisionId)}
                       />
-                      <DivisionLaneBoard
-                        tasks={toLaneBoardTasks(group.tasks, permCaller, contributorTaskIds)}
+                      <DivisionSubFilter
+                        divisionName={group.divisionName}
+                        subDivisions={childrenByDivision.get(group.divisionId)?.subDivisions ?? []}
+                        pmus={childrenByDivision.get(group.divisionId)?.pmus ?? []}
+                        laneBoardTasks={toLaneBoardTasks(group.tasks, permCaller, contributorTaskIds)}
                         canCurate={canSetJsPriorityLane(permCaller, {
                           divisionId: group.divisionId,
                         })}
                         canEditJsComment={canEditJsComment}
+                        activeGridTasks={group.tasks.map((t) =>
+                          toGridTaskProps(t, permCaller, canSetFortnight),
+                        )}
+                        completedGridTasks={(completedByDivision.get(group.divisionId) ?? []).map((t) =>
+                          toGridTaskProps(t, permCaller, canSetFortnight),
+                        )}
                       />
-                      <DivisionCardsToggle
-                        count={group.tasks.length}
-                        completedCount={(completedByDivision.get(group.divisionId) ?? []).length}
-                      >
-                        <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 md:gap-3">
-                          {group.tasks.map((t) => (
-                            <TaskRow key={t.id} task={t} caller={permCaller} canSetFortnight={canSetFortnight} />
-                          ))}
-                        </ul>
-
-                        {(completedByDivision.get(group.divisionId) ?? []).length > 0 ? (
-                          <>
-                            <h5 className="section-label mt-4 mb-2 flex items-center gap-1.5">
-                              <i
-                                className="ti ti-circle-check text-[13px] text-success"
-                                aria-hidden="true"
-                              />
-                              Completed
-                              <span className="font-normal normal-case tracking-normal text-ink-3">
-                                {(completedByDivision.get(group.divisionId) ?? []).length}
-                              </span>
-                            </h5>
-                            <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 md:gap-3 opacity-75">
-                              {(completedByDivision.get(group.divisionId) ?? []).map((t) => (
-                                <TaskRow
-                                  key={t.id}
-                                  task={t}
-                                  caller={permCaller}
-                                  canSetFortnight={canSetFortnight}
-                                />
-                              ))}
-                            </ul>
-                          </>
-                        ) : null}
-                      </DivisionCardsToggle>
                     </GroupedDivisionAccordion>
                   ))}
                 </div>
@@ -474,6 +485,7 @@ function toLaneBoardTasks(
     return {
       id: t.id,
       name: t.name,
+      subDivisionId: t.subDivisionId,
       lane:
         lane === 'today' ||
         lane === 'week' ||
@@ -494,6 +506,59 @@ function toLaneBoardTasks(
         }) || contributorTaskIds.has(t.id),
     };
   });
+}
+
+/**
+ * Same view-model TaskRow builds, but as a plain data object rather than
+ * JSX — DivisionSubFilter (a client component) needs the full set of a
+ * division's tasks in hand so it can filter them by the sub-division pills
+ * without a server round-trip, then render whichever are visible itself.
+ * subDivisionId is the one field TaskCardInteractiveProps doesn't carry;
+ * everything else is identical to TaskRow's own props.
+ */
+function toGridTaskProps(
+  t: VisibleTask,
+  caller: PermCaller,
+  canSetFortnight: boolean,
+): TaskCardInteractiveProps & { subDivisionId: string | null } {
+  const subtaskTotal = t.subtasks.length;
+  const subtaskDone = t.subtasks.filter((s) => s.status === 'completed').length;
+  const due = formatDue(t.dueDate);
+  const canChangeStatus = canManageTask(caller, {
+    ownerId: t.ownerId,
+    createdById: t.createdById,
+    divisionId: t.divisionId,
+    visibility: t.visibility,
+  });
+
+  return {
+    taskId: t.id,
+    subDivisionId: t.subDivisionId,
+    refNumber: t.refNumber,
+    name: t.name,
+    description: t.description,
+    attachmentNames: t.attachmentNames,
+    attachmentDocs: t.attachments,
+    division: { name: t.division.name },
+    status: t.status as PillStatusTone,
+    priority: t.priority as PillPriorityTone,
+    jsPriorityLane: t.jsPriorityLane as PillJsLane | null,
+    due,
+    owner: {
+      initials: initialsOf(t.owner.name),
+      colour: t.owner.division.avatarColour,
+      name: t.owner.name,
+    },
+    subtasks: subtaskTotal > 0 ? { done: subtaskDone, total: subtaskTotal } : undefined,
+    hasAttachment: t.hasAttachment,
+    primaryDivisionName: t.collaborators.some((c) => c.role === 'division_lead')
+      ? t.division.name
+      : undefined,
+    mobileSplit: true,
+    href: `/tasks/${t.id}`,
+    canChangeStatus,
+    canSetFortnight,
+  };
 }
 
 /**
