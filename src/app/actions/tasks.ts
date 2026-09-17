@@ -32,6 +32,7 @@ import {
   visibilityAnd,
 } from '@/lib/visibility';
 import { getPmuTeamMemberIds, isElevatedOverDivision } from '@/lib/pmu-team';
+import { resolvePmuTeamShareOnCreate } from '@/lib/pmu-team-shared';
 import {
   buildTaskParticipantWhere,
   isTaskContributor,
@@ -324,12 +325,14 @@ const createTaskSchema = z.object({
     .union([z.literal(''), z.string().uuid()])
     .optional()
     .transform((v) => (v && v.length > 0 ? v : undefined)),
-  // "Show this task to PMU team" — only meaningful on a division task whose
-  // division actually has a PMU under it; ignored otherwise (see below).
+  // "Show this task to PMU team". Tri-state on purpose: `undefined` means the
+  // form never showed the switch (a Timeline-File spawn, a bulk import), which
+  // is NOT the same as the user turning it off — a PMU task defaults to shared
+  // in the first case and honours the choice in the second. See below.
   sharedWithPmuTeam: z
     .union([z.literal('on'), z.literal('')])
     .optional()
-    .transform((v) => v === 'on'),
+    .transform((v) => (v === undefined ? undefined : v === 'on')),
   driveUrl: z
     .string()
     .trim()
@@ -375,6 +378,7 @@ async function createTaskInner(
     subDivisionId: formData.get('subDivisionId') || undefined,
     ownerId: formData.get('ownerId') || undefined,
     linkedTimelineFileId: formData.get('linkedTimelineFileId') || undefined,
+    sharedWithPmuTeam: formData.get('sharedWithPmuTeam') ?? undefined,
     driveUrl: formData.get('driveUrl') || undefined,
   });
 
@@ -435,12 +439,10 @@ async function createTaskInner(
   // A sub-division tag must belong to the target division (a Division row of
   // kind 'sub_division' whose parent is the target).
   let subDivisionId: string | null = null;
-  // "Show this task to PMU team", honoured only for a division task whose
-  // division has a PMU. No separate permission check: creating a division task
-  // here already required hasDivisionPower (Super Admin / OSD / that division's
-  // head), which is exactly the set canSharePmuTeam allows to flip it on a
-  // division task. A PMU target is excluded — sharing a PMU's own task with its
-  // team is the team leader's call, made from the task afterwards.
+  // "Show this task to PMU team" — the rule is pure, see
+  // resolvePmuTeamShareOnCreate. No separate permission check on the division
+  // branch: creating a task on that board already required the membership /
+  // head gate above, which is the set canSharePmuTeam allows to flip it.
   let sharedWithPmuTeam = false;
   {
     const targetDivision = await prisma.division.findUnique({
@@ -466,10 +468,18 @@ async function createTaskInner(
       subDivisionId = sub.id;
     }
 
-    if (parsed.data.sharedWithPmuTeam && targetDivision?.kind !== 'pmu') {
-      const pmus = (await getPmusByParentDivision([targetDivisionId])).get(targetDivisionId) ?? [];
-      sharedWithPmuTeam = pmus.length > 0;
-    }
+    const targetIsPmu = targetDivision?.kind === 'pmu';
+    // Only a division branch that was actually asked for needs the lookup.
+    const divisionHasPmu =
+      !targetIsPmu && parsed.data.sharedWithPmuTeam === true
+        ? ((await getPmusByParentDivision([targetDivisionId])).get(targetDivisionId) ?? [])
+            .length > 0
+        : false;
+    sharedWithPmuTeam = resolvePmuTeamShareOnCreate({
+      targetIsPmu,
+      divisionHasPmu,
+      requested: parsed.data.sharedWithPmuTeam,
+    });
 
     if (parsed.data.ownerId) {
       const chosen = await prisma.user.findUnique({

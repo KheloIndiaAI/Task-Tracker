@@ -17,25 +17,30 @@ export type PmuHeadCandidate = {
 };
 
 type PmuTeamHeadCardProps = {
-  divisionId: string;
-  divisionName: string;
+  /** The PMU this card is for — one card per PMU, never per division. */
+  pmuId: string;
+  pmuName: string;
   currentHead: PmuHeadCandidate | null;
-  /** Active PMU members of this division — the only eligible heads. */
+  /** Active members of THIS PMU — the only eligible heads. */
   candidates: PmuHeadCandidate[];
   /** Only Super Admin may change it; others see it read-only. */
   canEdit: boolean;
 };
 
 /**
- * Shows and (for Super Admin) sets the division's PMU Team Head — the PMU
- * member with `pmu_role = 'pmu_team_leader'` who administers the PMU team's
- * tasks (edit, allot, collaborators, attachments, and delete of the team's own
+ * Shows and (for Super Admin) sets one PMU's Team Head — the member of that
+ * PMU with `pmu_role = 'pmu_team_leader'` who administers the team's tasks
+ * (edit, allot, collaborators, attachments, and delete of the team's own
  * tasks; never a task or document from a Division Head / Super Admin / OSD).
- * Rendered only when the division actually has PMU members.
+ *
+ * One card per PMU. A division can carry several — Khelo India Scheme has
+ * INFRA_PMU, KIS_PMU and PPP_PMU — and each runs its own team, so the card is
+ * named after the PMU rather than the division and pools candidates from that
+ * PMU alone.
  */
 export function PmuTeamHeadCard({
-  divisionId,
-  divisionName,
+  pmuId,
+  pmuName,
   currentHead,
   candidates,
   canEdit,
@@ -63,10 +68,12 @@ export function PmuTeamHeadCard({
     : candidates;
 
   return (
-    <div className="mb-4 bg-panel border border-line rounded-xl px-4 py-3 flex items-center gap-3">
+    <div className="mb-3 bg-panel border border-line rounded-xl px-4 py-3 flex items-center gap-3">
       <i className="ti ti-user-star text-[16px] text-primary shrink-0" aria-hidden="true" />
       <div className="min-w-0 flex-1">
-        <p className="text-[11px] text-ink-3">PMU team head</p>
+        <p className="text-[11px] text-ink-3">
+          <span className="font-mono">{pmuName}</span> · team head
+        </p>
         {currentHead ? (
           <p className="text-[13px] font-medium text-ink truncate">
             {currentHead.name}
@@ -87,7 +94,7 @@ export function PmuTeamHeadCard({
         </button>
       ) : null}
 
-      <Sheet open={open} onClose={close} title="PMU team head" subtitle={divisionName}>
+      <Sheet open={open} onClose={close} title="PMU team head" subtitle={pmuName}>
         {open ? (
           <div className="flex flex-col gap-3">
             <p className="text-[12px] text-ink-3">
@@ -101,7 +108,7 @@ export function PmuTeamHeadCard({
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search PMU members…"
+              placeholder={`Search ${pmuName} members…`}
               autoFocus
               className="w-full px-3 py-2.5 rounded-lg border border-line bg-panel text-[14px] outline-none focus:border-ink"
             />
@@ -114,7 +121,7 @@ export function PmuTeamHeadCard({
               {currentHead ? (
                 <li>
                   <form action={formAction}>
-                    <input type="hidden" name="divisionId" value={divisionId} />
+                    <input type="hidden" name="pmuId" value={pmuId} />
                     <input type="hidden" name="headUserId" value="" />
                     <RowButton
                       label="Remove current head"
@@ -125,13 +132,13 @@ export function PmuTeamHeadCard({
               ) : null}
               {filtered.length === 0 ? (
                 <li className="py-6 text-center text-[13px] text-ink-3">
-                  {candidates.length === 0 ? 'No PMU members in this division' : 'No matches'}
+                  {candidates.length === 0 ? 'No members in this PMU' : 'No matches'}
                 </li>
               ) : (
                 filtered.map((c) => (
                   <li key={c.id}>
                     <form action={formAction}>
-                      <input type="hidden" name="divisionId" value={divisionId} />
+                      <input type="hidden" name="pmuId" value={pmuId} />
                       <input type="hidden" name="headUserId" value={c.id} />
                       <CandidateButton candidate={c} isCurrent={c.id === currentHead?.id} />
                     </form>

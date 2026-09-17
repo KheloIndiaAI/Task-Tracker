@@ -208,9 +208,16 @@ function QuickCreateForm({
   // division can't be submitted against a different one.
   const [subDivisionId, setSubDivisionId] = useState('');
   // "Show this task to PMU team" — only ever submitted while its switch is on
-  // screen (the Switch renders the hidden input), and reset alongside the two
-  // above so a choice made for one division can't ride along to another.
-  const [shareWithPmu, setShareWithPmu] = useState(false);
+  // screen (the Switch renders the hidden input), and re-derived whenever the
+  // target changes so a choice made for one board can't ride along to another.
+  //
+  // A PMU's own task starts ON: work on a PMU board is the team's work, and
+  // every member should see it in their assigned list from the start. A
+  // division task starts OFF — showing it down to a PMU punches a hole in PMU
+  // isolation, so it is opted into, never assumed.
+  const [shareWithPmu, setShareWithPmu] = useState(
+    () => createTargets.find((t) => t.id === divisionId)?.kind === 'pmu',
+  );
 
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
@@ -449,10 +456,13 @@ function QuickCreateForm({
               <select
                 value={divisionId}
                 onChange={(e) => {
-                  setDivisionId(e.target.value);
+                  const next = e.target.value;
+                  setDivisionId(next);
                   setOwnerId('');
                   setSubDivisionId('');
-                  setShareWithPmu(false);
+                  setShareWithPmu(
+                    createTargets.find((t) => t.id === next)?.kind === 'pmu',
+                  );
                 }}
                 className="w-full px-3 py-2.5 rounded-lg border border-line bg-panel text-[14px] text-ink outline-none focus:border-ink appearance-none"
               >
@@ -489,14 +499,14 @@ function QuickCreateForm({
             </Field>
           ) : null}
 
-          {/* Show this task to PMU team — offered only for a division that
-              actually has a PMU under it (pmuNames is empty otherwise, and
-              empty for a PMU target), matching the same switch on the task
-              detail page. Off by default: PMU isolation is the norm and this
-              opens a hole in it for one task. */}
+          {/* Show this task to PMU team — the same switch as the task detail
+              page. Offered on a PMU target (where it starts on: the team's own
+              board) and on a division that actually has a PMU under it (where
+              it starts off: showing a division task down to a PMU punches a
+              hole in PMU isolation, so it is opted into). A division with no
+              PMU has no audience and never sees it. */}
           {selectedTarget &&
-          selectedTarget.kind !== 'pmu' &&
-          selectedTarget.pmuNames.length > 0 ? (
+          (selectedTarget.kind === 'pmu' || selectedTarget.pmuNames.length > 0) ? (
             <div
               className={cn(
                 'flex items-start gap-3 rounded-xl border px-3.5 py-3 transition-colors duration-[var(--dur-base)]',
@@ -514,9 +524,13 @@ function QuickCreateForm({
               <div className="min-w-0 flex-1">
                 <p className="text-[13px] font-medium text-ink">Show this task to PMU team</p>
                 <p className="mt-0.5 text-[11.5px] leading-relaxed text-ink-3">
-                  {shareWithPmu
-                    ? `${formatPmuNames(selectedTarget.pmuNames)} can open this task and collaborate on it.`
-                    : `${formatPmuNames(selectedTarget.pmuNames)} cannot see this division's tasks. Turn it on for this one.`}
+                  {selectedTarget.kind === 'pmu'
+                    ? shareWithPmu
+                      ? `Every member of ${selectedTarget.name} sees it in their assigned list.`
+                      : `Only its owner will have ${selectedTarget.name}'s task in their assigned list.`
+                    : shareWithPmu
+                      ? `${formatPmuNames(selectedTarget.pmuNames)} can open this task and collaborate on it.`
+                      : `${formatPmuNames(selectedTarget.pmuNames)} cannot see this division's tasks. Turn it on for this one.`}
                 </p>
               </div>
               <Switch

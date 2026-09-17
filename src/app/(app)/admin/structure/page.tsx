@@ -202,15 +202,34 @@ export default async function StructurePage({ searchParams }: PageProps) {
     return u.sectionId === activeDivision.id;
   });
 
-  // Active PMU members of the shown division — the eligible pool for its PMU
-  // Team Head. In the current data model these are is_pmu users homed in the
-  // division; the head is whichever holds pmu_role 'pmu_team_leader'.
-  const pmuMembersOfActive =
-    activeDivision.kind === 'division'
-      ? allUsers.filter(
-          (u) => u.isActive && u.isPmu && u.divisionId === activeDivision.id,
-        )
-      : [];
+  // The PMUs this page shows a Team Head card for — one card each.
+  //
+  //   - on a DIVISION: every PMU hanging off it (pmu_parent_division_id, with
+  //     the parent_id fallback the rest of the codebase uses). A division can
+  //     carry several, and each runs its own team, so each needs its own head.
+  //   - on a PMU itself: just that PMU, so the control also sits where you
+  //     would look for it after clicking the PMU in the tree.
+  //
+  // Candidates are keyed on users.pmu_id, never the home division: every
+  // member of every PMU under a division shares that division as their home,
+  // so pooling by division mixed the teams together.
+  const pmusToHead =
+    activeDivision.kind === 'pmu'
+      ? [activeDivision]
+      : activeDivision.kind === 'division'
+        ? divisions.filter(
+            (d) =>
+              d.kind === 'pmu' &&
+              (d.pmuParentDivisionId ?? d.parentId) === activeDivision.id,
+          )
+        : [];
+  const pmuMembersByPmu = new Map<string, typeof allUsers>();
+  for (const u of allUsers) {
+    if (!u.isActive || !u.isPmu || !u.pmuId) continue;
+    const list = pmuMembersByPmu.get(u.pmuId) ?? [];
+    list.push(u);
+    pmuMembersByPmu.set(u.pmuId, list);
+  }
 
   // Pool/roots/reachability are computed inside HierarchyMapper, which
   // guarantees every officer renders exactly once.
@@ -345,19 +364,23 @@ export default async function StructurePage({ searchParams }: PageProps) {
             canEdit={session.user.isSuperAdmin === true}
           />
         ) : null}
-        {activeDivision.kind === 'division' && pmuMembersOfActive.length > 0 ? (
-          <PmuTeamHeadCard
-            divisionId={activeDivision.id}
-            divisionName={activeDivision.name}
-            currentHead={
-              pmuMembersOfActive
-                .filter((u) => u.pmuRole === 'pmu_team_leader')
-                .map(pmuHeadCandidateOf)[0] ?? null
-            }
-            candidates={pmuMembersOfActive.map(pmuHeadCandidateOf)}
-            canEdit={session.user.isSuperAdmin === true}
-          />
-        ) : null}
+        {pmusToHead.map((pmu) => {
+          const members = pmuMembersByPmu.get(pmu.id) ?? [];
+          return (
+            <PmuTeamHeadCard
+              key={pmu.id}
+              pmuId={pmu.id}
+              pmuName={pmu.name}
+              currentHead={
+                members
+                  .filter((u) => u.pmuRole === 'pmu_team_leader')
+                  .map(pmuHeadCandidateOf)[0] ?? null
+              }
+              candidates={members.map(pmuHeadCandidateOf)}
+              canEdit={session.user.isSuperAdmin === true}
+            />
+          );
+        })}
         <HierarchyMapper
           divisionName={activeDivision.name}
           parentBreadcrumb={parentBreadcrumb}
