@@ -7,8 +7,7 @@ import { DOC_SORTS, DOC_SORT_LABEL, type DocSort } from '@/lib/document-centre-s
 import { cn } from '@/lib/utils';
 
 /**
- * Sort dropdown for the Document Centre list. Pure URL state (?sort=),
- * mirroring the tasks DivisionControls sort menu.
+ * Sort dropdown for the Document Centre list. Pure URL state (?sort=).
  */
 export function DocumentSortControl({ current }: { current: DocSort }) {
   const router = useRouter();
