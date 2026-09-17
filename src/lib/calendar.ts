@@ -8,7 +8,7 @@ import {
 } from '@/lib/engagements';
 import { getMemberDivisionIds } from '@/lib/rbac';
 import { buildTfVisibilityClause } from '@/lib/timeline-files';
-import { buildVisibilityClauses } from '@/lib/visibility';
+import { buildVisibilityClauses, visibilityAnd } from '@/lib/visibility';
 
 /**
  * Unified planning calendar — data fetch + grid helpers.
@@ -92,6 +92,8 @@ export async function fetchCalendarEvents(opts: {
   const wantEngagements = filters.kinds.has('engagement') && maySeeEngagements;
 
   // Same scoper as /tasks and search — visibility parity across surfaces.
+  // `[]` is the fail-closed placeholder for the branch that never runs —
+  // an empty OR matches nothing, unlike `null`, which would mean unrestricted.
   const taskVisibility = wantTasks ? await buildVisibilityClauses(me) : [];
   const tfVisibility = wantTfs ? await buildTfVisibilityClause(me) : null;
 
@@ -102,7 +104,7 @@ export async function fetchCalendarEvents(opts: {
             archivedAt: null,
             parentTaskId: null,
             dueDate: { gte: opts.from, lte: opts.to },
-            AND: [{ OR: taskVisibility }],
+            AND: visibilityAnd(taskVisibility),
             ...(filters.mine ? { ownerId: me.id } : {}),
             ...(filters.divisionId ? { divisionId: filters.divisionId } : {}),
             ...(filters.priority ? { priority: filters.priority as never } : {}),

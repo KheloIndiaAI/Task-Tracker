@@ -6,7 +6,7 @@ import { prisma } from '@/lib/db';
 import { isOfficeDocument, officeWebViewerUrl } from '@/lib/mime';
 import { isS3Configured, presignView } from '@/lib/s3';
 import { buildTfVisibilityClause } from '@/lib/timeline-files';
-import { buildVisibilityClauses } from '@/lib/visibility';
+import { buildVisibilityClauses, visibilityAnd } from '@/lib/visibility';
 
 /**
  * GET /api/attachments/:id/view
@@ -57,7 +57,7 @@ export async function GET(
   if (att.ownerType === 'task' || att.ownerType === 'task_comment') {
     const visibility = await buildVisibilityClauses(me);
     const ok = await prisma.task.findFirst({
-      where: { id: att.ownerId, AND: [{ OR: visibility }] },
+      where: { id: att.ownerId, AND: visibilityAnd(visibility) },
       select: { id: true },
     });
     if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });

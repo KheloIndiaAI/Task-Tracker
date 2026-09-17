@@ -5,7 +5,7 @@ import { quickSearchDocuments } from '@/lib/document-search';
 import { formatDue, initialsOf } from '@/lib/format';
 import { USER_SUMMARY_SELECT } from '@/lib/prisma-selects';
 import { buildTfVisibilityClause } from '@/lib/timeline-files';
-import { buildVisibilityClauses } from '@/lib/visibility';
+import { buildVisibilityClauses, visibilityAnd } from '@/lib/visibility';
 
 /**
  * Global search across tasks, timeline files, users, and tags.
@@ -187,7 +187,7 @@ export async function searchTasksFor(
     parentTaskId: null,
     OR: orClauses,
   };
-  const andClauses: Prisma.TaskWhereInput[] = [{ OR: visibility }, filter];
+  const andClauses: Prisma.TaskWhereInput[] = [...visibilityAnd(visibility), filter];
 
   if (filters) {
     if (filters.status && (SEARCHABLE_STATUSES as readonly string[]).includes(filters.status)) {
@@ -556,7 +556,7 @@ export async function quickSearchTasks(
   const where: Prisma.TaskWhereInput = {
     archivedAt: null,
     parentTaskId: null,
-    AND: [{ OR: visibility }, { OR: orClauses }],
+    AND: [...visibilityAnd(visibility), { OR: orClauses }],
   };
 
   const [tasks, total] = await Promise.all([

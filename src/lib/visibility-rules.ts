@@ -7,12 +7,6 @@ import type { Prisma } from '@prisma/client';
  * from there.
  */
 
-/**
- * A uuid no task can have, used as the right-hand side of an always-true
- * comparison — see the Super Admin / OSD branch below.
- */
-const NIL_UUID = '00000000-0000-0000-0000-000000000000';
-
 export type CallerSummary = {
   id: string;
   hierarchySlot: string;
@@ -24,6 +18,40 @@ export type CallerSummary = {
 };
 
 /** Extra caller facts resolved from the DB, injected into the pure builder. */
+/**
+ * What a caller may read.
+ *
+ *   - an ARRAY — the OR-arms that scope them. Every arm must carry a real
+ *     condition: Prisma folds an empty one out of the array, which under OR
+ *     NARROWS the result to the remaining arms rather than widening it.
+ *   - `null` — UNRESTRICTED. The caller reads every task, so no visibility
+ *     filter is applied at all. Expressed as an absence rather than a
+ *     match-everything condition, because there is no honest way to write
+ *     "no filter" as a filter — the attempt is what broke Super Admin on
+ *     2026-09-17.
+ *
+ * An EMPTY array is neither: `OR: []` matches nothing, which is the correct
+ * fail-closed value for "this caller may read no task at all".
+ *
+ * Never spread a scope into a `where` yourself — pass it through
+ * `visibilityAnd` so the unrestricted case is handled the one way.
+ */
+export type VisibilityScope = Prisma.TaskWhereInput[] | null;
+
+/**
+ * A scope as AND-able clauses: `[{ OR: scope }]`, or nothing at all when the
+ * caller is unrestricted. Spread it into the `AND` of any task query:
+ *
+ *     where: { archivedAt: null, AND: [...visibilityAnd(scope), filter] }
+ *
+ * Under AND an absent clause means "no restriction", which is exactly what
+ * unrestricted should mean — the same shape `buildTfVisibilityClause` has
+ * always used for Timeline Files.
+ */
+export function visibilityAnd(scope: VisibilityScope): Prisma.TaskWhereInput[] {
+  return scope === null ? [] : [{ OR: scope }];
+}
+
 export type VisibilityOptions = {
   /**
    * True when the caller is the head of their PMU's home (parent) division.
@@ -77,6 +105,9 @@ export type VisibilityOptions = {
  * of divisions they head (direct headships + active delegations) and, for
  * PMU members, the ids of everyone in their PMU (themselves + teammates).
  *
+ * Returns `null` for callers who read everything (see VisibilityScope) —
+ * never a match-everything clause.
+ *
  * There is no per-task privacy setting: a task belongs to a division, and
  * everyone who can read that division's board can read it. The old
  * `tasks.visibility` enum ('personal' | 'division') and the
@@ -91,7 +122,7 @@ export function buildVisibilityClausesFrom(
   headedDivisionIds: string[],
   pmuMemberIds: string[] = [],
   opts: VisibilityOptions = {},
-): Prisma.TaskWhereInput[] {
+): VisibilityScope {
   const clauses: Prisma.TaskWhereInput[] = [
     // Always: tasks I own.
     { ownerId: me.id },
@@ -120,27 +151,11 @@ export function buildVisibilityClausesFrom(
   }
 
   if (me.isSuperAdmin || me.hierarchySlot === 'osd') {
-    // Super Admin + OSD read every task across the ministry.
-    //
-    // This has to be an always-TRUE comparison, not an empty object. Prisma
-    // folds an empty condition out of the array it sits in, and the meaning of
-    // that depends entirely on the surrounding operator:
-    //   - under AND, dropping it means "no restriction"  (what you want)
-    //   - under OR,  dropping it removes the arm, so the OR narrows to the
-    //     remaining arms — here the four base clauses, which would leave a
-    //     Super Admin reading only tasks they own / created / collaborate on /
-    //     were mentioned in.
-    // These clauses are consumed as an OR array, so `{}` silently locked
-    // leadership out of the ministry board (regression shipped 2026-09-17,
-    // caught the same day). `id != <nil uuid>` is true for every row and
-    // cannot be folded away.
-    //
-    // This is a holding fix. The honest shape is "no filter at all" rather
-    // than a filter that is always true — see the follow-up that makes the
-    // unrestricted case an absence of an OR, the way buildTfVisibilityClause
-    // already does it under AND.
-    clauses.push({ id: { not: NIL_UUID } });
-    return clauses;
+    // Super Admin + OSD read every task across the ministry — unrestricted,
+    // so no filter at all rather than a filter that tries to mean "any task".
+    // The base clauses above are a subset of everything, so dropping them here
+    // loses nothing.
+    return null;
   }
 
   // The caller's member divisions (home + admin-granted extras). The EXTRA

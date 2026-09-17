@@ -2,7 +2,7 @@ import type { Prisma } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
 import { isMediaAndIt } from '@/lib/divisions';
-import { buildVisibilityClauses, type CallerSummary } from '@/lib/visibility';
+import { buildVisibilityClauses, visibilityAnd, type CallerSummary } from '@/lib/visibility';
 import { REPORT_CADENCES, type ReportCadence } from '@/lib/reports-shared';
 
 export type ReportScope = 'scheduled' | 'all';
@@ -88,7 +88,7 @@ export async function fetchReportDivisionGroups(
     // Matches the list's own "Active tasks" default — a priority report is
     // about ongoing work, not a record of what is already finished.
     status: { not: 'completed' },
-    OR: visibilityClauses,
+    AND: visibilityAnd(visibilityClauses),
     ...(filters.divisionIds.length > 0 ? { divisionId: { in: filters.divisionIds } } : {}),
     ...(laneCondition ? { jsPriorityLane: laneCondition } : {}),
   };

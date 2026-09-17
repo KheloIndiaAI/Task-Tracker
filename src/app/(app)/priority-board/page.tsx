@@ -4,7 +4,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { USER_SUMMARY_SELECT } from '@/lib/prisma-selects';
 import { initialsOf } from '@/lib/format';
-import { buildVisibilityClauses } from '@/lib/visibility';
+import { buildVisibilityClauses, visibilityAnd } from '@/lib/visibility';
 
 import { Board, BoardSearch, PrintBoardButton, type BoardTask } from './_components/Board';
 import { RemoveModeProvider, RemoveToggle } from './_components/RemoveMode';
@@ -35,7 +35,7 @@ export default async function PriorityBoardPage() {
       jsPriorityLane: { not: null },
       // A completed task drops off the board automatically.
       status: { not: 'completed' },
-      OR: visibilityClauses,
+      AND: visibilityAnd(visibilityClauses),
     },
     include: {
       owner: { select: USER_SUMMARY_SELECT },
