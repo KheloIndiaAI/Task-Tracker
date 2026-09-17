@@ -6,10 +6,12 @@ import { USER_SUMMARY_SELECT } from '@/lib/prisma-selects';
 import { getPmuTeamMemberIds } from '@/lib/pmu-team';
 import { getHeadedDivisionIds, getMemberDivisionIds } from '@/lib/rbac';
 import {
+  buildTaskFilterClause,
   buildVisibilityClausesFrom,
   visibilityAnd,
-  type VisibilityScope,
   type CallerSummary,
+  type TaskFilter,
+  type VisibilityScope,
 } from '@/lib/visibility-rules';
 
 /**
@@ -29,7 +31,7 @@ import {
  * readable by everyone who reads that board. See buildVisibilityClausesFrom.
  */
 
-export type TaskFilter = 'all' | 'today' | 'overdue' | 'mine' | 'urgent' | 'completed' | 'js_priority';
+export type { TaskFilter };
 
 /**
  * List ordering:
@@ -228,32 +230,6 @@ export async function buildVisibilityClauses(me: CallerSummary): Promise<Visibil
   });
 }
 
-/**
- * Filter clause derived from the `filter` chip.
- * Composed with the visibility OR — both must match.
- */
-function buildFilterClause(filter: TaskFilter, callerId: string): Prisma.TaskWhereInput {
-  const now = new Date();
-  switch (filter) {
-    case 'today': {
-      return { dueDate: { gte: startOfDayIST(), lte: endOfDayIST() } };
-    }
-    case 'overdue':
-      return { dueDate: { lt: startOfDayIST() }, status: { not: 'completed' } };
-    case 'urgent':
-      return { priority: 'urgent' };
-    case 'mine':
-      return { ownerId: callerId };
-    case 'completed':
-      return { status: 'completed' };
-    case 'js_priority':
-      return { jsPriorityLane: { not: null }, status: { not: 'completed' } };
-    case 'all':
-    default:
-      return { status: { not: 'completed' } };
-  }
-}
-
 export type VisibleTask = Task & {
   owner: { id: string; name: string; designation: string; division: { id: string; name: string; avatarColour: string } };
   division: { id: string; name: string; avatarColour: string; kind: string; displayOrder: number };
@@ -287,6 +263,13 @@ export async function fetchVisibleTasks(opts: {
   filter: TaskFilter;
   divisionId?: string;
   sort?: TaskSort;
+  /**
+   * Narrow to tasks OWNED by this user, on top of `filter`. The division
+   * board's completed list uses it so that "My tasks" scopes the completed
+   * work too — otherwise the card showed my open tasks beside everyone's
+   * finished ones.
+   */
+  ownerId?: string;
 }): Promise<{ tasks: VisibleTask[]; total: number; capped: boolean }> {
   const me = await prisma.user.findUnique({
     where: { id: opts.callerId },
@@ -302,7 +285,7 @@ export async function fetchVisibleTasks(opts: {
   if (!me) return { tasks: [], total: 0, capped: false };
 
   const visibilityClauses = await buildVisibilityClauses(me);
-  const filterClause = buildFilterClause(opts.filter, me.id);
+  const filterClause = buildTaskFilterClause(opts.filter, me.id);
 
   const andClauses: Prisma.TaskWhereInput[] = [
     ...visibilityAnd(visibilityClauses),
@@ -310,6 +293,9 @@ export async function fetchVisibleTasks(opts: {
   ];
   if (opts.divisionId) {
     andClauses.push({ divisionId: opts.divisionId });
+  }
+  if (opts.ownerId) {
+    andClauses.push({ ownerId: opts.ownerId });
   }
 
   const where: Prisma.TaskWhereInput = {
