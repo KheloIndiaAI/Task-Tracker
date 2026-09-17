@@ -24,15 +24,26 @@ const PILL_ACTIVE = 'bg-ink text-onink border-ink';
 const PILL_IDLE = 'bg-panel text-ink-2 border-line hover:border-ink-4';
 
 /**
- * The tasks list's header controls: a Division filter dropdown and a My-tasks
- * toggle, both writing to the URL so the server re-scopes the same division
- * board rather than a second layout appearing.
+ * The tasks list's header controls — a scope pair, both writing to the URL so
+ * the server re-scopes the same division board rather than a second layout
+ * appearing.
  *
- * My tasks maps to `?filter=mine` — the filter the JS Dashboard's "My tasks"
- * stat already links to, so arriving from there shows the pill lit. It is a
- * toggle, not a mode: turning it off drops the param entirely rather than
- * writing `filter=all`, keeping the URL clean and any other filter a link
- * might carry intact.
+ * **All tasks** (left) is the whole board, and the page's default: it is lit on
+ * load and stays lit until My tasks is on. It doubles as the division picker —
+ * choosing one narrows the board and the pill reads that division's name
+ * instead, which is also the only way back from a PMU quick-link
+ * (`/tasks?division=<pmu>`). Its first menu entry is a true reset: it clears
+ * the division AND My tasks together, which is what a control labelled "All
+ * tasks" has to mean.
+ *
+ * **My tasks** (right) maps to `?filter=mine` — the filter the JS Dashboard's
+ * "My tasks" stat already links to, so arriving from there shows it lit. A
+ * toggle, not a mode: turning it off drops the param rather than writing
+ * `filter=all`, keeping the URL clean.
+ *
+ * Exactly one of the two is lit at any time. Division narrowing is carried by
+ * the left pill's LABEL rather than a second lit state, so the pair always
+ * reads as the either/or it is.
  *
  * These used to sit alongside a "Group by division" toggle and a Sort
  * dropdown — both removed by request, since they only ever showed the state
@@ -73,6 +84,21 @@ export function DivisionControls({ divisions }: DivisionControlsProps) {
     router.push(buildHref(divId), { scroll: false });
   };
 
+  /**
+   * The "All tasks" menu entry. Clears the division AND My tasks, because a
+   * control saying "all tasks" that left a My-tasks filter running would be
+   * lying. Selecting a named division below leaves My tasks alone, so "my
+   * tasks in Khelo India Scheme" stays reachable.
+   */
+  const onShowAll = () => {
+    setDropdownOpen(false);
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('division');
+    params.delete('filter');
+    const qs = params.toString();
+    router.push(qs ? `/tasks?${qs}` : '/tasks', { scroll: false });
+  };
+
   const onToggleMine = () => {
     const params = new URLSearchParams(searchParams.toString());
     if (mineActive) params.delete('filter');
@@ -89,10 +115,18 @@ export function DivisionControls({ divisions }: DivisionControlsProps) {
         <button
           type="button"
           onClick={() => setDropdownOpen(!dropdownOpen)}
-          className={cn(PILL, activeDivision ? PILL_ACTIVE : PILL_IDLE)}
+          aria-pressed={!mineActive}
+          title={
+            activeName
+              ? `Showing ${activeName} — choose another division, or All tasks`
+              : 'Showing every division — choose one to narrow the board'
+          }
+          className={cn(PILL, mineActive ? PILL_IDLE : PILL_ACTIVE)}
         >
+          {/* Stays a building even when the label reads "All tasks": it is the
+              only hint that the chevron opens a list of divisions. */}
           <i className="ti ti-building text-[13px]" aria-hidden="true" />
-          {activeName ?? 'Division'}
+          {activeName ?? 'All tasks'}
           <i
             className={cn(
               'ti text-[11px] transition-transform',
@@ -111,14 +145,16 @@ export function DivisionControls({ divisions }: DivisionControlsProps) {
               <button
                 type="button"
                 role="option"
-                aria-selected={!activeDivision}
-                onClick={() => onSelectDivision('')}
+                aria-selected={!activeDivision && !mineActive}
+                onClick={onShowAll}
                 className={cn(
                   'w-full text-left px-3 py-2.5 text-[12.5px] font-medium transition-colors',
-                  !activeDivision ? 'bg-primary-soft text-ink' : 'text-ink-2 hover:bg-bg',
+                  !activeDivision && !mineActive
+                    ? 'bg-primary-soft text-ink'
+                    : 'text-ink-2 hover:bg-bg',
                 )}
               >
-                All divisions
+                All tasks
               </button>
             </li>
             {divisions.map((d) => (
