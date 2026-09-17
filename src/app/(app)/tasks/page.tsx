@@ -127,12 +127,15 @@ export default async function TasksPage({ searchParams }: PageProps) {
     // Completed work, listed after each division's active cards. Only the
     // grouped view has a per-division place to put it, and the "Completed"
     // filter already shows it on its own, so this query is skipped otherwise.
+    // Under "My tasks" it is scoped to the caller too, so both halves of a
+    // card describe the same person.
     groupByDivision && filter !== 'completed'
       ? fetchVisibleTasks({
           callerId: me.id,
           filter: 'completed',
           divisionId: divisionFilter || undefined,
           sort,
+          ownerId: filter === 'mine' ? me.id : undefined,
         })
       : Promise.resolve(null),
   ]);
@@ -259,7 +262,9 @@ export default async function TasksPage({ searchParams }: PageProps) {
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-2 mt-2">
+          {/* Wraps rather than overflowing: two pills plus the KPI pill is
+              close to a 390px phone's width. */}
+          <div className="flex flex-wrap items-center justify-between gap-2 mt-2">
             <Suspense fallback={null}>
               <DivisionControls divisions={topLevelDivisions} />
             </Suspense>
@@ -671,7 +676,7 @@ function EmptyState({ filter }: { filter: TaskFilter }) {
     all: 'No tasks yet. Use the + button or "New task" to create one.',
     today: 'Nothing due today.',
     overdue: 'No overdue tasks. Stay on top.',
-    mine: 'No tasks owned by you in this view.',
+    mine: 'Nothing is assigned to you here. Turn off My tasks to see the whole board.',
     urgent: 'No urgent tasks right now.',
     js_priority: 'No JS Priority tasks.',
     completed: 'No completed tasks.',

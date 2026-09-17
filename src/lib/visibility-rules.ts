@@ -1,11 +1,56 @@
 import type { Prisma } from '@prisma/client';
 
+import { startOfDayIST, endOfDayIST } from '@/lib/date';
+
 /**
  * Pure task-visibility clause builder — no database imports, so the
  * rules are unit-testable in isolation. `src/lib/visibility.ts` wraps
  * this with the DB-backed headship lookup; everything else should import
  * from there.
  */
+
+/** The filter-chip vocabulary shared by the list, its counts and the report. */
+export type TaskFilter =
+  | 'all'
+  | 'today'
+  | 'overdue'
+  | 'mine'
+  | 'urgent'
+  | 'completed'
+  | 'js_priority';
+
+/**
+ * Filter clause derived from the `filter` search param — the chip vocabulary
+ * the tasks list, its counts and the report all share. Composed with the
+ * visibility scope in an AND, so it never widens what a caller may read.
+ *
+ * `all` and `mine` both hide completed work: the page is titled "Active
+ * tasks", and the division board lists completed tasks separately underneath
+ * each card. Without that, a completed task of mine appeared in both lists at
+ * once under the My-tasks pill.
+ */
+export function buildTaskFilterClause(
+  filter: TaskFilter,
+  callerId: string,
+): Prisma.TaskWhereInput {
+  switch (filter) {
+    case 'today':
+      return { dueDate: { gte: startOfDayIST(), lte: endOfDayIST() } };
+    case 'overdue':
+      return { dueDate: { lt: startOfDayIST() }, status: { not: 'completed' } };
+    case 'urgent':
+      return { priority: 'urgent' };
+    case 'mine':
+      return { ownerId: callerId, status: { not: 'completed' } };
+    case 'completed':
+      return { status: 'completed' };
+    case 'js_priority':
+      return { jsPriorityLane: { not: null }, status: { not: 'completed' } };
+    case 'all':
+    default:
+      return { status: { not: 'completed' } };
+  }
+}
 
 export type CallerSummary = {
   id: string;
