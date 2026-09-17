@@ -13,7 +13,7 @@ import { resolveGroupByDivision } from '@/lib/task-grouping-shared';
 import { canAccessReportGeneration } from '@/lib/reports-shared';
 import { fetchTaskCounts, fetchVisibleTasks, getPmuParentDivisionHeadId, type TaskFilter, type TaskSort } from '@/lib/visibility';
 
-import { DivisionControls } from './_components/DivisionControls';
+import { TaskScopeControls } from './_components/TaskScopeControls';
 import { type LaneBoardTask } from './_components/DivisionLaneBoard';
 import { DivisionNoticeBoard } from './_components/DivisionNoticeBoard';
 import { DivisionSubFilter } from './_components/DivisionSubFilter';
@@ -270,7 +270,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
               close to a 390px phone's width. */}
           <div className="flex flex-wrap items-center justify-between gap-2 mt-2">
             <Suspense fallback={null}>
-              <DivisionControls divisions={topLevelDivisions} />
+              <TaskScopeControls />
             </Suspense>
             <StatsStrip counts={counts} />
           </div>

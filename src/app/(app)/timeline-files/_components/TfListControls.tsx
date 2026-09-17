@@ -45,8 +45,7 @@ const SORT_OPTIONS: { value: '' | 'default' | 'alpha'; label: string; hint: stri
  * Client controls for the timeline-files list: a Status dropdown (replaces the
  * old status filter chips), a Division dropdown (all divisions), a Sort
  * dropdown (default / latest), and a Group-by-division toggle. Each writes to
- * the URL search params the server page reads. Mirrors the tasks-page
- * DivisionControls so the two lists feel identical.
+ * the URL search params the server page reads.
  */
 export function TfListControls({ divisions, canGroupByDivision }: TfListControlsProps) {
   const router = useRouter();
