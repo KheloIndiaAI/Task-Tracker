@@ -205,6 +205,10 @@ export default async function TasksPage({ searchParams }: PageProps) {
   const { tasks, total, capped } = taskResult;
 
   const grouped = groupByDivision ? groupTasksByDivision(tasks) : null;
+  // Which divisions actually have a card on this page. A PMU pill scrolls to
+  // the PMU's own card, so a PMU with nothing visible here gets no pill —
+  // otherwise it would point at a card that does not exist.
+  const cardDivisionIds = new Set(grouped?.map((g) => g.divisionId) ?? []);
   // Completed tasks keyed by division, so each group can list its own after the
   // active ones. A division whose work is entirely finished has no active tasks
   // and so forms no group — its completed tasks stay under the Completed filter.
@@ -327,7 +331,9 @@ export default async function TasksPage({ searchParams }: PageProps) {
                       <DivisionSubFilter
                         divisionName={group.divisionName}
                         subDivisions={childrenByDivision.get(group.divisionId)?.subDivisions ?? []}
-                        pmus={childrenByDivision.get(group.divisionId)?.pmus ?? []}
+                        pmus={(childrenByDivision.get(group.divisionId)?.pmus ?? []).filter(
+                          (p) => cardDivisionIds.has(p.id),
+                        )}
                         laneBoardTasks={toLaneBoardTasks(group.tasks, permCaller, contributorTaskIds)}
                         canCurate={canSetJsPriorityLane(permCaller, {
                           divisionId: group.divisionId,

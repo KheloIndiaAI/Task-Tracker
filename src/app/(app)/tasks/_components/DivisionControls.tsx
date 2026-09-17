@@ -31,10 +31,8 @@ const PILL_IDLE = 'bg-panel text-ink-2 border-line hover:border-ink-4';
  * **All tasks** (left) is the whole board, and the page's default: it is lit on
  * load and stays lit until My tasks is on. It doubles as the division picker —
  * choosing one narrows the board and the pill reads that division's name
- * instead, which is also the only way back from a PMU quick-link
- * (`/tasks?division=<pmu>`). Its first menu entry is a true reset: it clears
- * the division AND My tasks together, which is what a control labelled "All
- * tasks" has to mean.
+ * instead. Its first menu entry is a true reset: it clears the division AND My
+ * tasks together, which is what a control labelled "All tasks" has to mean.
  *
  * **My tasks** (right) maps to `?filter=mine` — the filter the JS Dashboard's
  * "My tasks" stat already links to, so arriving from there shows it lit. A
