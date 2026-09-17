@@ -9,7 +9,11 @@ import { formatDue, initialsOf } from '@/lib/format';
 import { canEditDivisionNotice, canManageTask, canSetJsPriorityLane, getHeadedDivisionIds } from '@/lib/rbac';
 import { getPmuTeamMemberIds } from '@/lib/pmu-team';
 import { getContributorTaskIds } from '@/lib/task-participants';
-import { resolveGroupByDivision } from '@/lib/task-grouping-shared';
+import {
+  canGroupTasksByDivision,
+  opensTasksGrouped,
+  resolveGroupByDivision,
+} from '@/lib/task-grouping-shared';
 import { canAccessReportGeneration } from '@/lib/reports-shared';
 import { fetchTaskCounts, fetchVisibleTasks, getPmuParentDivisionHeadId, type TaskFilter, type TaskSort } from '@/lib/visibility';
 
@@ -57,51 +61,52 @@ export default async function TasksPage({ searchParams }: PageProps) {
     ? ((searchParams?.sort as TaskSort) ?? 'latest')
     : 'latest';
 
-  const me = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: {
-      id: true,
-      divisionId: true,
-      isSuperAdmin: true,
-      hierarchySlot: true,
-      isPmu: true,
-      pmuId: true,
-      canAddJsComment: true,
-      canGenerateReports: true,
-      divisionAccess: { select: { divisionId: true } },
-    },
-  });
+  // Head/delegate divisions are fetched alongside `me` rather than with the
+  // main query batch below, because the grouped-view gate depends on them and
+  // that gate in turn decides whether the batch runs its completed-tasks query.
+  // Both only need the session id, so this costs no extra round trip.
+  const [me, headedDivisionIds] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: {
+        id: true,
+        divisionId: true,
+        isSuperAdmin: true,
+        hierarchySlot: true,
+        isPmu: true,
+        pmuId: true,
+        canAddJsComment: true,
+        canGenerateReports: true,
+        divisionAccess: { select: { divisionId: true } },
+      },
+    }),
+    getHeadedDivisionIds(session.user.id),
+  ]);
   if (!me) redirect('/login');
 
   // Member divisions (home + admin-granted extras) — drives the per-card
   // management gate and whether Group-by-division is offered.
   const memberDivisionIds = [me.divisionId, ...me.divisionAccess.map((a) => a.divisionId)];
 
-  // Group-by-division is a cross-division view. It is offered to leadership
-  // (Super Admin / OSD / JS) and to any multi-division member, whose flat list
-  // now spans more than one division. A single-division user's ?group=division
-  // param is ignored.
-  const canGroupByDivision =
-    me.isSuperAdmin ||
-    me.hierarchySlot === 'osd' ||
-    me.hierarchySlot === 'js' ||
-    memberDivisionIds.length > 1;
-
-  // Leadership reads across divisions, so the list opens grouped for them
-  // rather than as one flat ministry-wide pile. Everyone else keeps the flat
-  // default. An explicit ?group= always wins — see resolveGroupByDivision,
-  // which the toggle shares.
-  const defaultGroupByDivision =
-    me.isSuperAdmin || me.hierarchySlot === 'osd' || me.hierarchySlot === 'js';
+  // Who may see the grouped division board, and who lands on it — both pure
+  // rules, see task-grouping-shared.ts. Division heads are in both sets: the
+  // Notice board, sub-division pills and lane board they already have rights
+  // over live only inside a division card. An explicit ?group= still wins.
+  const groupingActor = {
+    isSuperAdmin: me.isSuperAdmin,
+    hierarchySlot: me.hierarchySlot,
+    headedDivisionIds,
+    memberDivisionIds,
+  };
+  const canGroupByDivision = canGroupTasksByDivision(groupingActor);
   const groupByDivision =
-    canGroupByDivision && resolveGroupByDivision(groupParam, defaultGroupByDivision);
+    canGroupByDivision && resolveGroupByDivision(groupParam, opensTasksGrouped(groupingActor));
 
   const [
     taskResult,
     counts,
     divisions,
     pmuParentHeadId,
-    headedDivisionIds,
     pmuTeamMemberIds,
     completedResult,
   ] = await Promise.all([
@@ -127,9 +132,6 @@ export default async function TasksPage({ searchParams }: PageProps) {
     me.isPmu && me.pmuId
       ? getPmuParentDivisionHeadId(me.pmuId)
       : Promise.resolve<string | null>(null),
-    // Head/delegate divisions — powers the per-card "change status" gate for
-    // the mobile long-press action modal (mirrors the server canEditTask rule).
-    getHeadedDivisionIds(me.id),
     // A PMU team leader's team (empty otherwise) — same per-card gate, so the
     // leader can act on their team's tasks from the list.
     me.isPmu ? getPmuTeamMemberIds(me.id) : Promise.resolve<string[]>([]),
