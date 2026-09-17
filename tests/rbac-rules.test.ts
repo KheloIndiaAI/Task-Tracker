@@ -8,6 +8,7 @@ import {
   canEditDivisionNotice,
   canManageTask,
   canSetJsPriorityLane,
+  canSharePmuTeam,
   canTransferTaskTo,
   isEligibleDelegate,
   roleOf,
@@ -468,6 +469,80 @@ describe('canSetJsPriorityLane — the Daily/Weekly/FortNight/Monthly/Watchlist 
 
   it('gives a plain officer none, even in their own division', () => {
     expect(canSetJsPriorityLane(caller(), { divisionId: KI })).toBe(false);
+  });
+});
+
+describe('canSharePmuTeam — the "Show this task to PMU team" switch', () => {
+  const PMU = 'div-ki-pmu';
+  const caller = (overrides: Record<string, unknown> = {}) => ({
+    id: 'caller-1',
+    isSuperAdmin: false,
+    hierarchySlot: 'under_secretary',
+    headedDivisionIds: [] as string[],
+    pmuId: null as string | null,
+    pmuRole: null as string | null,
+    ...overrides,
+  });
+  /** A task on a division that HAS a PMU under it. */
+  const divisionTask = {
+    ownerId: 'someone',
+    divisionId: KI,
+    divisionKind: 'division',
+    divisionHasPmu: true,
+  };
+  /** The same division, but with no PMU — the "else do not show this" case. */
+  const noPmuTask = { ...divisionTask, divisionHasPmu: false };
+  /** A PMU's own task. */
+  const pmuTask = {
+    ownerId: 'leader-1',
+    divisionId: PMU,
+    divisionKind: 'pmu',
+    divisionHasPmu: false,
+  };
+
+  it('is refused outright on a division with no PMU, for everyone', () => {
+    expect(canSharePmuTeam(caller({ isSuperAdmin: true }), noPmuTask)).toBe(false);
+    expect(canSharePmuTeam(caller({ hierarchySlot: 'osd' }), noPmuTask)).toBe(false);
+    expect(canSharePmuTeam(caller({ headedDivisionIds: [KI] }), noPmuTask)).toBe(false);
+  });
+
+  it("lets the division's head — or an active delegate — share a division task", () => {
+    expect(canSharePmuTeam(caller({ headedDivisionIds: [KI] }), divisionTask)).toBe(true);
+  });
+
+  it('refuses a head of some OTHER division', () => {
+    expect(canSharePmuTeam(caller({ headedDivisionIds: [NSDF] }), divisionTask)).toBe(false);
+  });
+
+  it('refuses a plain member, a Director, and even the task owner', () => {
+    expect(canSharePmuTeam(caller(), divisionTask)).toBe(false);
+    expect(canSharePmuTeam(caller({ hierarchySlot: 'director' }), divisionTask)).toBe(false);
+    // Ownership is not enough: widening who sees the board is a head power.
+    expect(canSharePmuTeam(caller({ id: 'someone' }), divisionTask)).toBe(false);
+  });
+
+  it('lets OSD and Super Admin share wherever there is an audience', () => {
+    expect(canSharePmuTeam(caller({ isSuperAdmin: true }), divisionTask)).toBe(true);
+    expect(canSharePmuTeam(caller({ hierarchySlot: 'osd' }), divisionTask)).toBe(true);
+    expect(canSharePmuTeam(caller({ isSuperAdmin: true }), pmuTask)).toBe(true);
+    expect(canSharePmuTeam(caller({ hierarchySlot: 'osd' }), pmuTask)).toBe(true);
+  });
+
+  it('keeps the original PMU-task rule: the team leader who owns it', () => {
+    const leader = caller({ id: 'leader-1', pmuRole: 'pmu_team_leader', pmuId: PMU });
+    expect(canSharePmuTeam(leader, pmuTask)).toBe(true);
+    // Not the owner…
+    expect(canSharePmuTeam({ ...leader, id: 'other' }, pmuTask)).toBe(false);
+    // …not a leader…
+    expect(canSharePmuTeam({ ...leader, pmuRole: 'pmu_senior_consultant' }, pmuTask)).toBe(false);
+    // …and not a leader of a DIFFERENT PMU.
+    expect(canSharePmuTeam({ ...leader, pmuId: 'div-other-pmu' }, pmuTask)).toBe(false);
+  });
+
+  it('does not let a division head reach into a PMU\'s own task', () => {
+    // A head manages the PMU's board elsewhere, but the whole-team share on a
+    // PMU task stays the team leader's call.
+    expect(canSharePmuTeam(caller({ headedDivisionIds: [KI, PMU] }), pmuTask)).toBe(false);
   });
 });
 

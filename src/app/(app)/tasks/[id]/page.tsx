@@ -11,6 +11,7 @@ import { formatDue, initialsOf } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import {
   canManageTask,
+  canSharePmuTeam,
   canTransferTaskTo,
   fetchTransferTargets,
   getHeadedDivisionsByUser,
@@ -19,7 +20,7 @@ import {
   getSubordinateIds,
 } from '@/lib/rbac';
 import { ACTOR_SUMMARY_SELECT, USER_SUMMARY_SELECT } from '@/lib/prisma-selects';
-import { buildVisibilityClauses } from '@/lib/visibility';
+import { buildVisibilityClauses, getPmusByParentDivision } from '@/lib/visibility';
 import { getPmuTeamMemberIds, isElevatedOverDivision } from '@/lib/pmu-team';
 import { buildTaskParticipantWhere } from '@/lib/task-participants';
 import { canAccessTimelineFiles } from '@/lib/timeline-files-access';
@@ -272,17 +273,37 @@ export default async function TaskDetailPage({ params }: PageProps) {
   // someone else, since the creator and the division head both retain it.
   const canEditCollaborators = canManage;
 
-  // PMU team share — a PMU team leader can share their own PMU task with the
-  // whole team, surfacing it in every teammate's assigned list (except the
-  // PMU's home-division head). OSD / Super Admin may manage it on any PMU task.
+  // PMU team share — one switch, two directions (see canSharePmuTeam):
+  //   - on a PMU's OWN task it shares with that whole PMU team, surfacing it
+  //     in every teammate's assigned list (except the PMU's home-division
+  //     head). Set by the PMU team leader who owns it.
+  //   - on a DIVISION task it shows the task down to the PMU team(s) under
+  //     that division, which PMU isolation otherwise hides from them. Set by
+  //     the division's head.
+  // OSD / Super Admin manage it on either. The switch is offered only where
+  // there is an audience: a PMU task, or a division that HAS a PMU under it —
+  // on a division with none it never renders.
   const isPmuTask = task.division.kind === 'pmu';
-  const canSharePmuTeam =
-    isPmuTask &&
-    ((task.ownerId === me.id &&
-      me.pmuRole === 'pmu_team_leader' &&
-      me.pmuId === task.divisionId) ||
-      me.isSuperAdmin ||
-      me.hierarchySlot === 'osd');
+  const divisionPmus = isPmuTask
+    ? []
+    : (await getPmusByParentDivision([task.divisionId])).get(task.divisionId) ?? [];
+  const pmuShareApplies = isPmuTask || divisionPmus.length > 0;
+  const canManagePmuShare = canSharePmuTeam(
+    {
+      id: me.id,
+      isSuperAdmin: me.isSuperAdmin,
+      hierarchySlot: me.hierarchySlot,
+      headedDivisionIds: actor?.headedDivisionIds ?? [],
+      pmuId: me.pmuId,
+      pmuRole: me.pmuRole,
+    },
+    {
+      ownerId: task.ownerId,
+      divisionId: task.divisionId,
+      divisionKind: task.division.kind,
+      divisionHasPmu: divisionPmus.length > 0,
+    },
+  );
 
   // Every task user-picker (collaborators, subtask assignees, @mentions in the
   // discussion) draws from the same set: the task division's members (or PMU
@@ -765,8 +786,13 @@ export default async function TaskDetailPage({ params }: PageProps) {
         canViewProfiles={canChangeDivision}
         subtasks={!task.parentTaskId ? subtaskScopes : undefined}
         pmuTeamShare={
-          isPmuTask
-            ? { canManage: canSharePmuTeam, shared: task.sharedWithPmuTeam }
+          pmuShareApplies
+            ? {
+                canManage: canManagePmuShare,
+                shared: task.sharedWithPmuTeam,
+                scope: isPmuTask ? 'pmu' : 'division',
+                pmuNames: divisionPmus.map((p) => p.name),
+              }
             : undefined
         }
       />

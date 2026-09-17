@@ -411,6 +411,79 @@ describe('buildVisibilityClausesFrom — PMU team leader read access', () => {
   });
 });
 
+describe('buildVisibilityClausesFrom — a division task shown DOWN to its PMU', () => {
+  const PMU = 'div-pmu';
+
+  it('a PMU member sees the parent division tasks marked shared', () => {
+    const clauses = buildVisibilityClausesFrom(
+      caller({ isPmu: true, pmuId: PMU }),
+      [],
+      ['me'],
+      { pmuParentDivisionId: NSDF },
+    );
+    expect(clauses).toContainEqual({
+      visibility: 'division',
+      sharedWithPmuTeam: true,
+      divisionId: NSDF,
+    });
+  });
+
+  it('is scoped to the PMU parent — never another division', () => {
+    const clauses = buildVisibilityClausesFrom(
+      caller({ isPmu: true, pmuId: PMU }),
+      [],
+      ['me'],
+      { pmuParentDivisionId: NSDF },
+    );
+    const shared = clauses.filter((c) => 'sharedWithPmuTeam' in c) as {
+      divisionId?: string;
+    }[];
+    // Exactly two: the PMU's own team share, and the parent division's.
+    expect(shared.map((c) => c.divisionId).sort()).toEqual([NSDF, PMU].sort());
+    expect(shared.some((c) => c.divisionId === KI)).toBe(false);
+  });
+
+  it('never opens the whole parent-division board, only shared tasks', () => {
+    // The crux of PMU isolation: no bare { divisionId: parent } clause appears.
+    const clauses = buildVisibilityClausesFrom(
+      caller({ isPmu: true, pmuId: PMU }),
+      [],
+      ['me'],
+      { pmuParentDivisionId: NSDF },
+    );
+    const unrestricted = clauses.filter(
+      (c) => 'divisionId' in c && !('sharedWithPmuTeam' in c) && c.visibility === 'division',
+    );
+    expect(unrestricted).toHaveLength(0);
+  });
+
+  it('emits nothing when the PMU has no parent division', () => {
+    for (const opts of [{}, { pmuParentDivisionId: null }]) {
+      const clauses = buildVisibilityClausesFrom(
+        caller({ isPmu: true, pmuId: null }),
+        [],
+        ['me'],
+        opts,
+      );
+      expect(clauses.some((c) => 'sharedWithPmuTeam' in c)).toBe(false);
+    }
+  });
+
+  it('is never emitted for a non-PMU caller, whatever the opt says', () => {
+    for (const me of [
+      caller({ hierarchySlot: 'aso' }),
+      caller({ isSuperAdmin: true }),
+      caller({ hierarchySlot: 'osd' }),
+      caller({ hierarchySlot: 'js' }),
+    ]) {
+      const clauses = buildVisibilityClausesFrom(me, [], [], {
+        pmuParentDivisionId: NSDF,
+      });
+      expect(clauses.some((c) => 'sharedWithPmuTeam' in c)).toBe(false);
+    }
+  });
+});
+
 describe('buildVisibilityClausesFrom — PMU team share', () => {
   const PMU = 'div-pmu';
 

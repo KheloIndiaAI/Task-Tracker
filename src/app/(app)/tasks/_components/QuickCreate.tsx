@@ -14,7 +14,7 @@ import {
   FloatingActionButton,
   PrimaryAction,
 } from '@/components/layout';
-import { Sheet, UserPicker, type UserPickerOption } from '@/components/ui';
+import { Sheet, Switch, UserPicker, type UserPickerOption } from '@/components/ui';
 import { createTaskAction } from '@/app/actions/tasks';
 import { registerAttachmentAction } from '@/app/actions/attachments';
 import {
@@ -59,6 +59,12 @@ export type DivisionTarget = {
   autoOwnerName: string | null;
   /** Sub-divisions of this division; empty when it has none (or it's a PMU). */
   subDivisions: { id: string; name: string }[];
+  /**
+   * PMU teams hanging off this division. Empty for a PMU target and for a
+   * division with no PMU — the "Show this task to PMU team" switch is offered
+   * only when this is non-empty, so a division with no PMU never shows it.
+   */
+  pmuNames: string[];
 };
 
 /** An active member of a create target, offered as an optional initial owner. */
@@ -214,6 +220,10 @@ function QuickCreateForm({
   // Reset alongside ownerId so a sub-division from a previously-chosen
   // division can't be submitted against a different one.
   const [subDivisionId, setSubDivisionId] = useState('');
+  // "Show this task to PMU team" — only ever submitted while its switch is on
+  // screen (the Switch renders the hidden input), and reset alongside the two
+  // above so a choice made for one division can't ride along to another.
+  const [shareWithPmu, setShareWithPmu] = useState(false);
 
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
@@ -500,6 +510,7 @@ function QuickCreateForm({
                   setDivisionId(e.target.value);
                   setOwnerId('');
                   setSubDivisionId('');
+                  setShareWithPmu(false);
                 }}
                 className="w-full px-3 py-2.5 rounded-lg border border-line bg-panel text-[14px] text-ink outline-none focus:border-ink appearance-none"
               >
@@ -537,6 +548,47 @@ function QuickCreateForm({
                 ))}
               </select>
             </Field>
+          ) : null}
+
+          {/* Show this task to PMU team — offered only for a division that
+              actually has a PMU under it (pmuNames is empty otherwise, and
+              empty for a PMU target), matching the same switch on the task
+              detail page. Off by default: PMU isolation is the norm and this
+              opens a hole in it for one task. */}
+          {canCreateDivisionTasks &&
+          visibility === 'division' &&
+          selectedTarget &&
+          selectedTarget.kind !== 'pmu' &&
+          selectedTarget.pmuNames.length > 0 ? (
+            <div
+              className={cn(
+                'flex items-start gap-3 rounded-xl border px-3.5 py-3 transition-colors duration-[var(--dur-base)]',
+                shareWithPmu ? 'border-info/30 bg-info-soft' : 'border-line bg-panel',
+              )}
+            >
+              <span
+                className={cn(
+                  'mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg transition-colors duration-[var(--dur-base)]',
+                  shareWithPmu ? 'bg-info/15 text-info' : 'bg-line-2 text-ink-3',
+                )}
+              >
+                <i className="ti ti-users-group text-[15px]" aria-hidden="true" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-medium text-ink">Show this task to PMU team</p>
+                <p className="mt-0.5 text-[11.5px] leading-relaxed text-ink-3">
+                  {shareWithPmu
+                    ? `${formatPmuNames(selectedTarget.pmuNames)} can open this task and collaborate on it.`
+                    : `${formatPmuNames(selectedTarget.pmuNames)} cannot see this division's tasks. Turn it on for this one.`}
+                </p>
+              </div>
+              <Switch
+                name="sharedWithPmuTeam"
+                checked={shareWithPmu}
+                onChange={setShareWithPmu}
+                ariaLabel="Show this task to PMU team"
+              />
+            </div>
           ) : null}
 
           {/* Owner (optional) — a head may name an initial owner from the
@@ -700,6 +752,13 @@ function QuickCreateForm({
 // ------------------------------------------------------------
 // Sub-components
 // ------------------------------------------------------------
+
+/** "NSDF_PMU", or "A, B and C" — the PMU teams a share would reach. */
+function formatPmuNames(names: string[]): string {
+  if (names.length === 0) return 'The PMU team';
+  if (names.length === 1) return names[0];
+  return names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+}
 
 function Field({
   label,
