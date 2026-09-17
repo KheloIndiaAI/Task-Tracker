@@ -7,6 +7,12 @@ import type { Prisma } from '@prisma/client';
  * from there.
  */
 
+/**
+ * A uuid no task can have, used as the right-hand side of an always-true
+ * comparison — see the Super Admin / OSD branch below.
+ */
+const NIL_UUID = '00000000-0000-0000-0000-000000000000';
+
 export type CallerSummary = {
   id: string;
   hierarchySlot: string;
@@ -114,10 +120,26 @@ export function buildVisibilityClausesFrom(
   }
 
   if (me.isSuperAdmin || me.hierarchySlot === 'osd') {
-    // Super Admin + OSD read every task across the ministry. An empty clause
-    // is Prisma's "no filter", so this OR branch matches everything — the
-    // whole point, and cheaper than enumerating divisions.
-    clauses.push({});
+    // Super Admin + OSD read every task across the ministry.
+    //
+    // This has to be an always-TRUE comparison, not an empty object. Prisma
+    // folds an empty condition out of the array it sits in, and the meaning of
+    // that depends entirely on the surrounding operator:
+    //   - under AND, dropping it means "no restriction"  (what you want)
+    //   - under OR,  dropping it removes the arm, so the OR narrows to the
+    //     remaining arms — here the four base clauses, which would leave a
+    //     Super Admin reading only tasks they own / created / collaborate on /
+    //     were mentioned in.
+    // These clauses are consumed as an OR array, so `{}` silently locked
+    // leadership out of the ministry board (regression shipped 2026-09-17,
+    // caught the same day). `id != <nil uuid>` is true for every row and
+    // cannot be folded away.
+    //
+    // This is a holding fix. The honest shape is "no filter at all" rather
+    // than a filter that is always true — see the follow-up that makes the
+    // unrestricted case an absence of an OR, the way buildTfVisibilityClause
+    // already does it under AND.
+    clauses.push({ id: { not: NIL_UUID } });
     return clauses;
   }
 

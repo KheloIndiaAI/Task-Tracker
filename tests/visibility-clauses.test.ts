@@ -154,12 +154,39 @@ describe('buildVisibilityClausesFrom — multi-division membership', () => {
 });
 
 describe('buildVisibilityClausesFrom — roles', () => {
-  it('super admin and OSD see everything — one unfiltered clause', () => {
+  it('super admin and OSD see everything — one always-true clause', () => {
     for (const me of [caller({ isSuperAdmin: true }), caller({ hierarchySlot: 'osd' })]) {
       const clauses = buildVisibilityClausesFrom(me, []);
       expect(clauses).toHaveLength(BASE_CLAUSES + 1);
-      // Prisma reads {} as "no filter", so this OR branch matches every task.
-      expect(clauses[BASE_CLAUSES]).toEqual({});
+      expect(clauses[BASE_CLAUSES]).toEqual({
+        id: { not: '00000000-0000-0000-0000-000000000000' },
+      });
+    }
+  });
+
+  it('never emits an EMPTY clause — Prisma would fold it out of the OR', () => {
+    // The 2026-09-17 regression: an empty object reads as "no filter", but
+    // these clauses are consumed as `OR: [...]`, and Prisma drops an empty
+    // arm — narrowing the OR instead of widening it. A Super Admin was left
+    // reading only their own four base clauses. Every arm must carry a real
+    // condition.
+    const variants: CallerSummary[] = [
+      caller({ isSuperAdmin: true }),
+      caller({ hierarchySlot: 'osd' }),
+      caller({ hierarchySlot: 'js' }),
+      caller({ hierarchySlot: 'director' }),
+      caller({ hierarchySlot: 'aso' }),
+      caller({ isPmu: true, pmuId: 'div-pmu' }),
+    ];
+    for (const v of variants) {
+      for (const scope of [[], [NSDF]]) {
+        const clauses = buildVisibilityClausesFrom(v, scope, ['me'], {
+          pmuParentDivisionId: KI,
+          pmuDivisionIds: [NSDF],
+          memberDivisionIds: [KI, ABD],
+        });
+        for (const c of clauses) expect(Object.keys(c).length).toBeGreaterThan(0);
+      }
     }
   });
 
