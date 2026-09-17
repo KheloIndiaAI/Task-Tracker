@@ -20,7 +20,7 @@ import {
   getSubordinateIds,
 } from '@/lib/rbac';
 import { ACTOR_SUMMARY_SELECT, USER_SUMMARY_SELECT } from '@/lib/prisma-selects';
-import { buildVisibilityClauses, getPmusByParentDivision } from '@/lib/visibility';
+import { buildVisibilityClauses, getPmusByParentDivision, visibilityAnd } from '@/lib/visibility';
 import { getPmuTeamMemberIds, isElevatedOverDivision } from '@/lib/pmu-team';
 import { buildTaskParticipantWhere } from '@/lib/task-participants';
 import { canAccessTimelineFiles } from '@/lib/timeline-files-access';
@@ -114,7 +114,7 @@ export default async function TaskDetailPage({ params }: PageProps) {
 
   const visibilityClauses = await buildVisibilityClauses(me);
   const canView = await prisma.task.count({
-    where: { id: task.id, OR: visibilityClauses },
+    where: { id: task.id, AND: visibilityAnd(visibilityClauses) },
   });
   if (!canView) {
     return (

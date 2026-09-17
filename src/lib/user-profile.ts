@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/db';
-import { buildVisibilityClauses } from '@/lib/visibility';
+import { buildVisibilityClauses, visibilityAnd } from '@/lib/visibility';
 
 /**
  * View-only profile card shown when a person is opened from global search.
@@ -143,7 +143,7 @@ export async function getAllottedDivisionTasksFor(
           ],
         },
         // Caller visibility guard — never surface a task the caller can't see.
-        { OR: visibility },
+        ...visibilityAnd(visibility),
       ],
     },
     select: {

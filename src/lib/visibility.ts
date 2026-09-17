@@ -7,6 +7,8 @@ import { getPmuTeamMemberIds } from '@/lib/pmu-team';
 import { getHeadedDivisionIds, getMemberDivisionIds } from '@/lib/rbac';
 import {
   buildVisibilityClausesFrom,
+  visibilityAnd,
+  type VisibilityScope,
   type CallerSummary,
 } from '@/lib/visibility-rules';
 
@@ -64,8 +66,8 @@ export function taskListOrderBy(
   }
 }
 
-export { buildVisibilityClausesFrom };
-export type { CallerSummary };
+export { buildVisibilityClausesFrom, visibilityAnd };
+export type { CallerSummary, VisibilityScope };
 
 /**
  * Every active user in the caller's PMU — themselves plus their PMU
@@ -191,7 +193,7 @@ export async function getPmusByParentDivision(
  * Build the OR-of-visibility-clauses for a caller.
  * Returns clauses that are then composed with the filter clause in the page.
  */
-export async function buildVisibilityClauses(me: CallerSummary): Promise<Prisma.TaskWhereInput[]> {
+export async function buildVisibilityClauses(me: CallerSummary): Promise<VisibilityScope> {
   const [headedDivisionIds, memberDivisionIds, pmuMemberIds, pmuParent, pmuTeamLeaderMemberIds] = await Promise.all([
     getHeadedDivisionIds(me.id),
     // Member divisions (home + admin-granted extras). Resolved by id here so
@@ -303,7 +305,7 @@ export async function fetchVisibleTasks(opts: {
   const filterClause = buildFilterClause(opts.filter, me.id);
 
   const andClauses: Prisma.TaskWhereInput[] = [
-    { OR: visibilityClauses },
+    ...visibilityAnd(visibilityClauses),
     filterClause,
   ];
   if (opts.divisionId) {
@@ -386,7 +388,7 @@ export async function fetchTaskCounts(callerId: string): Promise<{
   const base: Prisma.TaskWhereInput = {
     archivedAt: null,
     parentTaskId: null,
-    AND: [{ OR: visibilityClauses }],
+    AND: visibilityAnd(visibilityClauses),
   };
 
   const [open, dueToday, overdue, completed] = await Promise.all([
@@ -449,7 +451,7 @@ export async function fetchStatTasks(
     where: {
       archivedAt: null,
       parentTaskId: null,
-      AND: [{ OR: visibilityClauses }, statusAndDue],
+      AND: [...visibilityAnd(visibilityClauses), statusAndDue],
     },
     select: {
       id: true,
@@ -503,7 +505,7 @@ export async function fetchOpenTasksByDivision(
       archivedAt: null,
       parentTaskId: null,
       status: { not: 'completed' },
-      AND: [{ OR: visibilityClauses }],
+      AND: visibilityAnd(visibilityClauses),
     },
     select: {
       divisionId: true,

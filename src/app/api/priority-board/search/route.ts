@@ -4,7 +4,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { initialsOf } from '@/lib/format';
 import { rateLimit } from '@/lib/rate-limit';
-import { buildVisibilityClauses } from '@/lib/visibility';
+import { buildVisibilityClauses, visibilityAnd } from '@/lib/visibility';
 
 /**
  * GET /api/priority-board/search?q=
@@ -54,7 +54,7 @@ export async function GET(request: Request) {
       parentTaskId: null,
       status: { not: 'completed' },
       AND: [
-        { OR: visibilityClauses },
+        ...visibilityAnd(visibilityClauses),
         {
           OR: [
             { name: { contains: escaped, mode: 'insensitive' } },

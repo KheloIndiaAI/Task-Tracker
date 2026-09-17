@@ -29,6 +29,7 @@ import {
   getPmuDivisionIdsFor,
   getPmuParentDivisionHeadId,
   getPmusByParentDivision,
+  visibilityAnd,
 } from '@/lib/visibility';
 import { getPmuTeamMemberIds, isElevatedOverDivision } from '@/lib/pmu-team';
 import {
@@ -282,7 +283,7 @@ async function canViewTask(callerId: string, taskId: string): Promise<boolean> {
   if (!me) return false;
   const visibilityClauses = await buildVisibilityClauses(me);
   const count = await prisma.task.count({
-    where: { id: taskId, OR: visibilityClauses },
+    where: { id: taskId, AND: visibilityAnd(visibilityClauses) },
   });
   return count > 0;
 }
