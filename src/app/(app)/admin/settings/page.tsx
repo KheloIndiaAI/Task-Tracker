@@ -92,7 +92,6 @@ export default async function AdminSettingsPage() {
           <Row label="Date format">d LLL yyyy (Indian convention)</Row>
           <Row label="Week starts on">Monday</Row>
           <Row label="Default task priority">Low</Row>
-          <Row label="Default visibility">Division for heads, personal for others</Row>
         </dl>
         <p className="px-5 pb-4 text-[11px] text-ink-3 leading-relaxed">
           These are baked into the app for v1. A configurable surface lives in

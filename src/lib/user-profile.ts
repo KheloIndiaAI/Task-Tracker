@@ -134,10 +134,8 @@ export async function getAllottedDivisionTasksFor(
       AND: [
         // How the profiled person is attached to the task: its owner (a
         // top-level task or a subtask they own — subtasks are just tasks with a
-        // parent), or an explicit collaborator. Subtasks inherit their parent's
-        // visibility, so `division` still admits subtasks of division tasks.
+        // parent), or an explicit collaborator.
         {
-          visibility: 'division',
           archivedAt: null,
           OR: [
             { ownerId: personId },

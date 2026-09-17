@@ -37,12 +37,11 @@ export default async function CommandCentrePage() {
   const startOfToday = startOfDayIST();
   const endOfToday = endOfDayIST();
 
-  // Division-only, deliberately. OSD and Super Admin CAN read personal tasks
-  // (see buildVisibilityClausesFrom), but these counters measure official
-  // division work — folding personal tasks in would inflate them and break
-  // comparison with previously reported figures. Kept out on purpose, not
-  // because they are unreachable.
-  const baseFilter = { archivedAt: null, parentTaskId: null, visibility: 'division' as const };
+  // Ministry-wide counters over every top-level task. These used to exclude
+  // personal-visibility tasks so the figures measured official division work
+  // only; with the personal/division split gone (2026-09-17) there is nothing
+  // left to exclude, so the counters now cover every task in the ministry.
+  const baseFilter = { archivedAt: null, parentTaskId: null };
 
   const [
     openTotal,

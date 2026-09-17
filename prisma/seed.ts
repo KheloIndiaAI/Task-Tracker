@@ -890,14 +890,6 @@ async function main() {
   });
 
   // ── Create all other users (without supervisor links) ───
-  // Slots seeded with the "Personal task visibility" grant — kept in step with
-  // the backfill in prisma/migrations/20260907120000_add_personal_task_visibility.
-  const PERSONAL_VISIBILITY_SLOTS = new Set([
-    'director',
-    'deputy_secretary',
-    'under_secretary',
-  ]);
-
   console.log(`Creating ${USERS.length} users…`);
   for (const u of USERS) {
     await prisma.user.create({
@@ -919,7 +911,6 @@ async function main() {
         // Mirrors the 20260907120000 migration's backfill, so a freshly seeded
         // database matches production instead of leaving every leader without
         // the grant. Super Admin can still flip it per user.
-        canSeePersonalTasks: PERSONAL_VISIBILITY_SLOTS.has(u.hierarchySlot),
       },
     });
   }

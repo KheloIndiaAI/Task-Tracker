@@ -127,7 +127,6 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
     isSuperAdmin: u.isSuperAdmin,
     canAccessDocumentCentre: u.canAccessDocumentCentre,
     canAccessBusinessCards: u.canAccessBusinessCards,
-    canSeePersonalTasks: u.canSeePersonalTasks,
     canAddJsComment: u.canAddJsComment,
     canGenerateReports: u.canGenerateReports,
     lastLogin: u.lastLogin,

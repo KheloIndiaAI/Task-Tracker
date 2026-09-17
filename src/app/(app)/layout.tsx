@@ -9,7 +9,7 @@ import { buildNotificationTaskContext } from '@/lib/notification-context';
 import { canAccessDocumentCentre as canAccessDocumentCentreShared } from '@/lib/document-centre-shared';
 import { canAccessBusinessCards as canAccessBusinessCardsShared } from '@/lib/business-cards-shared';
 import { canAccessTimelineFiles } from '@/lib/timeline-files-access';
-import { getHeadedDivisionIds } from '@/lib/rbac';
+import { getHeadedDivisionIds, getMemberDivisionIds } from '@/lib/rbac';
 import { getPmusByParentDivision } from '@/lib/visibility';
 import { isS3Configured } from '@/lib/s3';
 
@@ -22,7 +22,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const session = await auth();
   if (!session?.user) redirect('/login');
 
-  const [me, unreadCount, recentRaw, headedDivisionIds, officeOfJsDivisionId] =
+  const [me, unreadCount, recentRaw, headedDivisionIds, officeOfJsDivisionId, memberDivisionIds] =
     await Promise.all([
       prisma.user.findUnique({
         where: { id: session.user.id },
@@ -45,30 +45,32 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       }),
       getHeadedDivisionIds(session.user.id),
       getOfficeOfJsDivisionId(),
+      getMemberDivisionIds(session.user.id),
     ]);
   if (!me) redirect('/login');
 
-  // Quick Create offers the Division visibility option to anyone who can give
-  // work on some division board: Super Admin, OSD, or a head/delegate of any
-  // division. Creating a division task is a head power — mere membership of a
-  // division does NOT grant it.
-  const canCreateDivisionTasks =
-    me.isSuperAdmin ||
-    me.hierarchySlot === 'osd' ||
-    headedDivisionIds.length > 0;
+  // Boards the caller may put a task on. Creating a task is no longer a head
+  // power (the personal/division split was removed on 2026-09-17) — everyone
+  // creates on a board they belong to, and the whole board reads it. Super
+  // Admin / OSD reach everything; a head reaches the divisions they head plus
+  // those divisions' PMUs; everyone else reaches their member divisions.
+  //
+  // A PMU member is the exception: their home division is the PARENT division,
+  // whose board PMU isolation walls off from them — a task they created there
+  // would vanish from their own list. So they target their PMU instead, which
+  // is where their team actually reads. Mirrored by the server's create gate.
+  const isPmuMember = me.isPmu && me.pmuId !== null;
+  const ownTargetIds = isPmuMember
+    ? [me.pmuId as string, ...headedDivisionIds]
+    : [...memberDivisionIds, ...headedDivisionIds];
 
-  // Divisions + PMUs the caller may target when creating a division task
-  // (Structure & Hierarchy). Ownership auto-resolves to that division's head
-  // — or a PMU's team leader — on the server. Super Admin / OSD see all; a head
-  // sees the divisions they head plus those divisions' PMUs.
-  const createTargetsRaw = canCreateDivisionTasks
-    ? await prisma.division.findMany({
+  const createTargetsRaw = await prisma.division.findMany({
         where:
           me.isSuperAdmin || me.hierarchySlot === 'osd'
             ? { kind: { in: ['division', 'pmu'] } }
             : {
                 OR: [
-                  { id: { in: headedDivisionIds } },
+                  { id: { in: ownTargetIds } },
                   { kind: 'pmu', pmuParentDivisionId: { in: headedDivisionIds } },
                 ],
               },
@@ -86,8 +88,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             select: { id: true, name: true },
           },
         },
-      })
-    : [];
+      });
 
   // The optional-owner pool for Quick Create: active members of those targets
   // (a division's members have divisionId === target; a PMU's have pmuId ===
@@ -102,7 +103,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     createTargetsRaw.some((t) => t.id === officeOfJsDivisionId);
 
   const candidatesRaw =
-    canCreateDivisionTasks && createTargetsRaw.length > 0
+    createTargetsRaw.length > 0
       ? await prisma.user.findMany({
           where: {
             isActive: true,
@@ -240,7 +241,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <QuickCreateProvider
         defaultDivisionId={me.divisionId}
         s3Configured={isS3Configured()}
-        canCreateDivisionTasks={canCreateDivisionTasks}
         createTargets={createTargets}
         ownerCandidates={ownerCandidates}
         osdAccount={osdAccount}

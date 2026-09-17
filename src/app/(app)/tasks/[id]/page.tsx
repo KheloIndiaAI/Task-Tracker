@@ -87,7 +87,6 @@ export default async function TaskDetailPage({ params }: PageProps) {
           ownerId: true,
           createdById: true,
           divisionId: true,
-          visibility: true,
         },
       },
       linkedTimelineFile: true,
@@ -155,12 +154,10 @@ export default async function TaskDetailPage({ params }: PageProps) {
   );
   const isContributor = isCollaborator || isMentioned;
   const isUnassigned = task.ownerId === task.createdById;
-  // The Owner row reads as "Unassigned" for a top-level division task still
-  // owned by its creator — the state a division member can pull from. A
-  // personal task is genuinely owned by its creator, and subtasks are always
-  // assigned, so neither shows the unassigned label.
-  const ownerUnassigned =
-    isUnassigned && task.visibility !== 'personal' && !task.parentTaskId;
+  // The Owner row reads as "Unassigned" for a top-level task still owned by
+  // its creator — the state a division member can pull from. Subtasks are
+  // always assigned, so they never show the unassigned label.
+  const ownerUnassigned = isUnassigned && !task.parentTaskId;
   // Due-date display for the above-the-fold hero strip (same tone grammar as
   // the task cards).
   const heroDue = formatDue(task.dueDate);
@@ -180,30 +177,25 @@ export default async function TaskDetailPage({ params }: PageProps) {
   const isHeadOfTaskDivision =
     actor !== null && actor.headedDivisionIds.includes(task.divisionId);
 
-  // A PMU team leader administers their team's DIVISION tasks (edit,
-  // collaborators, reassign, attachments) — scoped to tasks OWNED BY a team
-  // member. A teammate's personal task stays out of scope, matching the
-  // visibility scoper. Empty for everyone else, so it never widens a
-  // non-leader's rights.
+  // A PMU team leader administers their team's tasks (edit, collaborators,
+  // reassign, attachments) — scoped to tasks OWNED BY a team member. Empty for
+  // everyone else, so it never widens a non-leader's rights.
   const pmuTeamMemberIds = await getPmuTeamMemberIds(session.user.id);
-  const managesAsPmuLeader =
-    task.visibility === 'division' && pmuTeamMemberIds.includes(task.ownerId);
+  const managesAsPmuLeader = pmuTeamMemberIds.includes(task.ownerId);
 
   const canPull =
     isUnassigned &&
     !isOwner &&
     !task.parentTaskId &&
-    task.visibility !== 'personal' &&
     memberDivisionIds.includes(task.divisionId);
 
-  // A PMU Team Head may delete their team's OWN division tasks — but never a
+  // A PMU Team Head may delete their team's OWN tasks — but never a
   // task allotted (created) by a Division Head / Super Admin / OSD. Mirrors
   // canPmuHeadDeleteOwnedTask in deleteTaskAction; keys on the parent for a
   // subtask (the subtask assignee is irrelevant to delete rights).
   const pmuHeadDeleteBase = isSubtask ? task.parentTask : task;
   const pmuHeadCanDeleteTask =
     pmuHeadDeleteBase != null &&
-    pmuHeadDeleteBase.visibility === 'division' &&
     pmuTeamMemberIds.includes(pmuHeadDeleteBase.ownerId) &&
     !(await isElevatedOverDivision(
       pmuHeadDeleteBase.createdById,
@@ -213,9 +205,10 @@ export default async function TaskDetailPage({ params }: PageProps) {
   // Delete mirrors deleteTaskAction. For a subtask, the right belongs to the
   // parent task's owner, the head of the division, or a Super Admin — never
   // the subtask's own assignee. For a top-level task: a Super Admin or the
-  // head of the division, plus a user's own personal task. A normal user who
-  // merely owns a division task (e.g. after a transfer) cannot delete it. A PMU
-  // Team Head may also delete the team's own (non-elevated-allotted) tasks.
+  // head of the division, plus a task you created and nobody has taken over.
+  // A normal user who merely owns a task (e.g. after a transfer) cannot delete
+  // it. A PMU Team Head may also delete the team's own (non-elevated-allotted)
+  // tasks.
   const canDelete =
     (isSubtask
       ? session.user.isSuperAdmin ||
@@ -223,7 +216,7 @@ export default async function TaskDetailPage({ params }: PageProps) {
         task.parentTask?.ownerId === session.user.id
       : session.user.isSuperAdmin ||
         isHeadOfTaskDivision ||
-        (task.visibility === 'personal' && task.ownerId === session.user.id)) ||
+        (task.createdById === session.user.id && isUnassigned)) ||
     pmuHeadCanDeleteTask;
 
   // Managing the task — status, priority, description, subtasks, AND its
@@ -246,7 +239,6 @@ export default async function TaskDetailPage({ params }: PageProps) {
       ownerId: task.ownerId,
       createdById: task.createdById,
       divisionId: task.divisionId,
-      visibility: task.visibility,
     },
   );
   const canEditFields = canManage;
@@ -257,15 +249,16 @@ export default async function TaskDetailPage({ params }: PageProps) {
 
   // Redefining the task — name, due date, recurrence — is stricter: a normal
   // owner (e.g. after a transfer) cannot. Mirrors canEditTaskDetails on the
-  // server. Own personal tasks stay fully editable. A Director who is a member
-  // (home or admin-granted extra) of the task's division may redefine it.
+  // server: whoever CREATED the task defined it and keeps the right to correct
+  // it. A Director who is a member (home or admin-granted extra) of the task's
+  // division may redefine it too.
   const canEditDetails =
     session.user.isSuperAdmin ||
     session.user.hierarchySlot === 'osd' ||
     session.user.hierarchySlot === 'js' ||
     (session.user.hierarchySlot === 'director' && memberDivisionIds.includes(task.divisionId)) ||
     isHeadOfTaskDivision ||
-    (task.visibility === 'personal' && task.ownerId === session.user.id);
+    task.createdById === session.user.id;
 
   // Collaborator add/remove is a task-management right — the same rule as
   // editing fields. Crucially this keeps it with the Head / OSD / Super Admin
@@ -514,13 +507,6 @@ export default async function TaskDetailPage({ params }: PageProps) {
 
   const canChangeDivision =
     session.user.isSuperAdmin || session.user.hierarchySlot === 'osd';
-
-  // Visibility is a head power in both directions — mirrors the
-  // canCreateDivisionTask gate in updateTaskFieldsAction.
-  const canEditVisibility =
-    session.user.isSuperAdmin ||
-    session.user.hierarchySlot === 'osd' ||
-    isHeadOfTaskDivision;
 
   // Super Admin and OSD may reassign anywhere; everyone else only sees
   // targets the RBAC matrix (or the legacy downward-chain rule) allows.
@@ -839,13 +825,11 @@ export default async function TaskDetailPage({ params }: PageProps) {
           subDivisionName={task.subDivision?.name ?? null}
           subDivisions={subDivisionOptions}
           canChangeSubDivision={canEditDetails}
-          visibility={task.visibility as 'division' | 'personal'}
           recurrence={task.recurrenceRule}
           reassignCandidates={reassignCandidates}
           pendingReassignment={pendingReassignment}
           canReassign={canReassign}
           canEditFields={canEditDetails}
-          canEditVisibility={canEditVisibility}
           canChangeDivision={canChangeDivision}
           divisions={allDivisions}
           canViewProfiles={canChangeDivision}

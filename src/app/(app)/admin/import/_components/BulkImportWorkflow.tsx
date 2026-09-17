@@ -12,9 +12,9 @@ import {
 } from '@/app/actions/bulk-import';
 import { cn } from '@/lib/utils';
 
-const CSV_TEMPLATE = `name,description,due_date,priority,visibility,division_name,owner_username,tags
-Cabinet brief draft v1,Initial outline for review,2026-06-20,high,division,Office of JS,osd.myas,"Cabinet,Q1"
-Section 3 cost figures,Pull MoF data and tabulate,2026-06-18,medium,division,Office of JS,osd.myas,
+const CSV_TEMPLATE = `name,description,due_date,priority,division_name,owner_username,tags
+Cabinet brief draft v1,Initial outline for review,2026-06-20,high,Office of JS,osd.myas,"Cabinet,Q1"
+Section 3 cost figures,Pull MoF data and tabulate,2026-06-18,medium,Office of JS,osd.myas,
 `;
 
 const INITIAL_PARSE: ParsePreviewState = { ok: false, epoch: 0 };
@@ -179,10 +179,6 @@ function Hints() {
       <Hint icon="ti-flame">
         <code className="font-mono">priority</code> ∈{' '}
         <code className="font-mono">low / medium / high / urgent</code>.
-      </Hint>
-      <Hint icon="ti-lock">
-        <code className="font-mono">visibility</code> ∈{' '}
-        <code className="font-mono">division / personal</code>.
       </Hint>
       <Hint icon="ti-tag">
         <code className="font-mono">tags</code>: comma- or semicolon-separated. Missing tags get auto-created.

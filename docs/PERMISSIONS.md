@@ -1,5 +1,8 @@
 # Permissions Matrix
 
+> **2026-09-17 — the personal/division split is gone.** `tasks.visibility`, the `users.can_see_personal_tasks` grant and the Visibility control were removed (migration `20260917120000_remove_task_visibility`). Every task belongs to a division and is readable by everyone who reads that board; no task was deleted or moved. Creating a task is no longer a head power — anyone creates on a board they belong to, and a PMU member creates on their own PMU. Passages below that still describe personal-visibility tasks, the `can_see_personal_tasks` grant, or `canCreateDivisionTask` are stale and superseded by this note.
+
+
 > Division-wide by default: every non-PMU ministry officer sees all division-visibility tasks in each division they are a member of, from first login, regardless of hierarchy slot. A user's **member set** is their home division (`users.division_id`) plus any extra divisions a Super Admin has granted them via `user_division_access` (§5.18); in every member division the user is an ordinary member and sees that division's board. Special rules layer on top for PMU isolation, personal visibility, cross-division tasks, headed-division access (delegations), and OSD's unrestricted access. Enforcement lives in the data-access layer (`buildVisibilityClausesFrom` in src/lib/visibility-rules.ts) — every read filters by the caller's member set / PMU flag / headed divisions before returning rows. This document is the source of truth for what those helpers must implement.
 
 ---

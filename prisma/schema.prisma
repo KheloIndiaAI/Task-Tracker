@@ -81,11 +81,6 @@ enum JsPriorityLane {
   watchlist
 }
 
-enum Visibility {
-  personal
-  division
-}
-
 enum RecurrenceRule {
   daily
   weekly
@@ -228,16 +223,10 @@ model User {
   // Super-Admin-managed grant of access to the Business Cards module.
   // Access = is_super_admin OR this flag (see canAccessBusinessCards).
   canAccessBusinessCards  Boolean @default(false) @map("can_access_business_cards")
-  // Super-Admin-managed grant to read OTHER people's PERSONAL tasks across the
-  // divisions this user belongs to or heads. Super Admin and OSD read them
-  // regardless of this flag; for everyone else it is the single switch.
-  // See buildVisibilityClausesFrom in src/lib/visibility-rules.ts.
-  canSeePersonalTasks     Boolean @default(false) @map("can_see_personal_tasks")
   // Super-Admin-managed grant to add/edit the JS Comment field on tasks (the
   // grouped tasks list's Daily/Weekly/Fortnight/Monthly board). Off by
-  // default for everyone, including leadership — unlike canSeePersonalTasks
-  // this has no seeded backfill; Super Admin always has the right regardless
-  // of this flag, so it only ever widens who ELSE can add it.
+  // default for everyone, including leadership; Super Admin always has the
+  // right regardless of this flag, so it only ever widens who ELSE can add it.
   canAddJsComment     Boolean   @default(false) @map("can_add_js_comment")
   // Super-Admin-managed grant to generate the Priority Task Report PDF from
   // /tasks. Super Admin, OSD, and any division head already have this by
@@ -464,7 +453,6 @@ model Task {
   status         TaskStatus      @default(not_started)
   priority       TaskPriority    @default(low)
   jsPriorityLane JsPriorityLane? @map("js_priority_lane")
-  visibility     Visibility      @default(division)
 
   // "Show this task to PMU team" — one flag, two directions, told apart by
   // whether the task's division IS a PMU:

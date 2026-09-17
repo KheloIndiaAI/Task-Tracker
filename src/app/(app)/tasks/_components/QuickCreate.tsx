@@ -87,7 +87,6 @@ type ProviderProps = {
   defaultDivisionId: string;
   s3Configured: boolean;
   /** Division-level creation is a head power — see canCreateDivisionTask. */
-  canCreateDivisionTasks: boolean;
   /** Divisions + PMUs the caller may create a task in (auto-owns to head/leader). */
   createTargets: DivisionTarget[];
   /** Active members of those targets — the optional initial-owner pool. */
@@ -100,7 +99,6 @@ type ProviderProps = {
 export function QuickCreateProvider({
   defaultDivisionId,
   s3Configured,
-  canCreateDivisionTasks,
   createTargets,
   ownerCandidates,
   osdAccount,
@@ -124,7 +122,6 @@ export function QuickCreateProvider({
             onSuccess={close}
             defaultDivisionId={defaultDivisionId}
             s3Configured={s3Configured}
-            canCreateDivisionTasks={canCreateDivisionTasks}
             createTargets={createTargets}
             ownerCandidates={ownerCandidates}
             osdAccount={osdAccount}
@@ -162,7 +159,6 @@ type FormProps = {
   onSuccess: () => void;
   defaultDivisionId: string;
   s3Configured: boolean;
-  canCreateDivisionTasks: boolean;
   createTargets: DivisionTarget[];
   ownerCandidates: OwnerCandidate[];
   osdAccount: OsdAccount | null;
@@ -177,16 +173,10 @@ const PRIORITIES = [
   { value: 'urgent', label: 'Urgent', tone: 'text-urgent' },
 ] as const;
 
-const VISIBILITIES = [
-  { value: 'division', label: 'Division', icon: 'ti-users' },
-  { value: 'personal', label: 'Personal', icon: 'ti-lock' },
-] as const;
-
 function QuickCreateForm({
   onSuccess,
   defaultDivisionId,
   s3Configured,
-  canCreateDivisionTasks,
   createTargets,
   ownerCandidates,
   osdAccount,
@@ -200,12 +190,9 @@ function QuickCreateForm({
   );
 
   const [priority, setPriority] = useState<(typeof PRIORITIES)[number]['value']>('low');
-  const [visibility, setVisibility] = useState<(typeof VISIBILITIES)[number]['value']>(
-    canCreateDivisionTasks ? 'division' : 'personal',
-  );
-  // Which division/PMU a division task lands in — ownership auto-resolves
-  // to that division's head or the PMU's team leader on the server. Default
-  // to the caller's own division when it's a valid target, else the first.
+  // Which division/PMU the task lands on — ownership auto-resolves to that
+  // division's head or the PMU's team leader on the server. Default to the
+  // caller's own division when it's a valid target, else the first.
   const [divisionId, setDivisionId] = useState(
     createTargets.some((t) => t.id === defaultDivisionId)
       ? defaultDivisionId
@@ -332,7 +319,7 @@ function QuickCreateForm({
         }))
     : [];
   const showOwnerPicker =
-    canCreateDivisionTasks && visibility === 'division' && ownerOptions.length > 0;
+    ownerOptions.length > 0;
 
   // One-click owner shortcuts beside the picker: the target's default owner
   // (division head / PMU team leader), plus the OSD account on Office-of-JS
@@ -358,15 +345,14 @@ function QuickCreateForm({
       <input
         type="hidden"
         name="divisionId"
-        value={visibility === 'division' ? divisionId : defaultDivisionId}
+        value={divisionId}
       />
       <input
         type="hidden"
         name="subDivisionId"
-        value={visibility === 'division' ? subDivisionId : ''}
+        value={subDivisionId}
       />
       <input type="hidden" name="priority" value={priority} />
-      <input type="hidden" name="visibility" value={visibility} />
 
       {/* Name — the only required field */}
       <div>
@@ -456,53 +442,9 @@ function QuickCreateForm({
             </div>
           </Field>
 
-          {/* Visibility segmented — division-level creation is a head power */}
-          <Field label="Visibility">
-            {canCreateDivisionTasks ? (
-              <div
-                role="radiogroup"
-                aria-label="Visibility"
-                className="grid grid-cols-2 gap-1 p-[3px] bg-line-2 rounded-[10px]"
-              >
-                {VISIBILITIES.map((v) => {
-                  const isActive = visibility === v.value;
-                  return (
-                    <button
-                      key={v.value}
-                      type="button"
-                      role="radio"
-                      aria-checked={isActive}
-                      onClick={() => {
-                        setVisibility(v.value);
-                        setOwnerId('');
-                        setSubDivisionId('');
-                      }}
-                      className={cn(
-                        'py-2 text-[12px] font-medium rounded-md transition-colors inline-flex items-center justify-center gap-1.5',
-                        isActive ? 'bg-panel text-ink shadow-sm' : 'text-ink-2 hover:text-ink',
-                      )}
-                    >
-                      <i className={cn('ti', v.icon, 'text-[13px]')} aria-hidden="true" />
-                      {v.label}
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="flex items-start gap-2 px-3 py-2.5 rounded-lg border border-line bg-bg text-[12px] text-ink-2">
-                <i className="ti ti-lock text-[14px] mt-px shrink-0" aria-hidden="true" />
-                <span>
-                  Personal — visible to you and added collaborators only.
-                  Division tasks are given by the division head.
-                </span>
-              </p>
-            )}
-          </Field>
-
-          {/* Division / PMU target. A division task starts unassigned for any
-              member to pull; a PMU task is owned by its team leader. Only shown
-              to authorized creators of division tasks. */}
-          {canCreateDivisionTasks && visibility === 'division' && createTargets.length > 0 ? (
+          {/* Division / PMU target. A task starts unassigned for any member to
+              pull; a PMU task is owned by its team leader. */}
+          {createTargets.length > 0 ? (
             <Field label="Division or PMU">
               <select
                 value={divisionId}
@@ -522,7 +464,7 @@ function QuickCreateForm({
                 ))}
               </select>
               <p className="mt-1 text-[11px] text-ink-3">
-                Leave the owner below blank and a division task starts unassigned — any member can pull it to take ownership; a PMU task goes to its team leader.
+                Everyone on this board sees the task. Leave the owner below blank and it starts unassigned — any member can pull it to take ownership; a PMU task goes to its team leader.
               </p>
             </Field>
           ) : null}
@@ -530,10 +472,7 @@ function QuickCreateForm({
           {/* Sub-division (optional) — shown only when the chosen division has
               sub-divisions. Categorisation only: it does not change who can own
               or see the task. Blank means the whole division. */}
-          {canCreateDivisionTasks &&
-          visibility === 'division' &&
-          selectedTarget &&
-          selectedTarget.subDivisions.length > 0 ? (
+          {selectedTarget && selectedTarget.subDivisions.length > 0 ? (
             <Field label="Sub-division" error={state.fieldErrors?.subDivisionId}>
               <select
                 value={subDivisionId}
@@ -555,9 +494,7 @@ function QuickCreateForm({
               empty for a PMU target), matching the same switch on the task
               detail page. Off by default: PMU isolation is the norm and this
               opens a hole in it for one task. */}
-          {canCreateDivisionTasks &&
-          visibility === 'division' &&
-          selectedTarget &&
+          {selectedTarget &&
           selectedTarget.kind !== 'pmu' &&
           selectedTarget.pmuNames.length > 0 ? (
             <div

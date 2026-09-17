@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   canActAsHeadOf,
   canAssignTaskTo,
-  canCreateDivisionTask,
+  canCreateTaskOutsideOwnDivisions,
   canDelegateDivision,
   canEditDivisionNotice,
   canManageTask,
@@ -233,46 +233,50 @@ describe('canActAsHeadOf', () => {
   });
 });
 
-describe('canCreateDivisionTask', () => {
-  it('super admin creates division-level tasks anywhere', () => {
+describe('canCreateTaskOutsideOwnDivisions', () => {
+  // Creating a task is no longer a head power — anyone may create on a board
+  // they belong to (the create action checks membership itself). This rule
+  // answers only the narrower question: may I create on a board that is NOT
+  // mine? So "false" here does not mean "cannot create a task", it means
+  // "only within your own divisions".
+
+  it('super admin reaches any board', () => {
     const sa = actor({ isSuperAdmin: true, divisionId: OJS });
-    expect(canCreateDivisionTask(sa, MEDIA)).toBe(true);
-    expect(canCreateDivisionTask(sa, KI)).toBe(true);
+    expect(canCreateTaskOutsideOwnDivisions(sa, MEDIA)).toBe(true);
+    expect(canCreateTaskOutsideOwnDivisions(sa, KI)).toBe(true);
   });
 
-  it('OSD creates division-level tasks anywhere', () => {
+  it('OSD reaches any board', () => {
     const osd = actor({ isOsd: true, divisionId: OJS });
-    expect(canCreateDivisionTask(osd, MEDIA)).toBe(true);
-    expect(canCreateDivisionTask(osd, KI)).toBe(true);
+    expect(canCreateTaskOutsideOwnDivisions(osd, MEDIA)).toBe(true);
+    expect(canCreateTaskOutsideOwnDivisions(osd, KI)).toBe(true);
   });
 
-  it('a head only within divisions they head — home does not count', () => {
-    // Zuber-style: home ABD, heads NSDF only.
+  it('a head reaches the divisions they head', () => {
+    // Zuber-style: home ABD, heads NSDF only. ABD is reached as a MEMBER by
+    // the create action, not by this rule.
     const head = actor({ divisionId: ABD, headedDivisionIds: [NSDF] });
-    expect(canCreateDivisionTask(head, NSDF)).toBe(true);
-    expect(canCreateDivisionTask(head, ABD)).toBe(false);
-    expect(canCreateDivisionTask(head, KI)).toBe(false);
+    expect(canCreateTaskOutsideOwnDivisions(head, NSDF)).toBe(true);
+    expect(canCreateTaskOutsideOwnDivisions(head, KI)).toBe(false);
   });
 
-  it('an active delegate gains the power for the delegated division', () => {
+  it('an active delegate reaches the delegated division', () => {
     // headedDivisionIds already folds in active delegations.
     const delegate = actor({ divisionId: KI, headedDivisionIds: [SGM] });
-    expect(canCreateDivisionTask(delegate, SGM)).toBe(true);
-    expect(canCreateDivisionTask(delegate, KI)).toBe(false);
+    expect(canCreateTaskOutsideOwnDivisions(delegate, SGM)).toBe(true);
   });
 
-  it('a division user cannot create division-level tasks, even at home', () => {
+  it('a plain user reaches nothing beyond their own divisions', () => {
     const user = actor({ divisionId: KI });
-    expect(canCreateDivisionTask(user, KI)).toBe(false);
-    expect(canCreateDivisionTask(user, SGM)).toBe(false);
+    expect(canCreateTaskOutsideOwnDivisions(user, SGM)).toBe(false);
+    expect(canCreateTaskOutsideOwnDivisions(user, MEDIA)).toBe(false);
   });
 
-  it('membership does NOT grant division-task creation (a non-head member)', () => {
-    // Full membership of NSDF lets the user see and work NSDF tasks, but
-    // creating a division-visibility task stays a head power.
+  it('membership alone does not widen this rule', () => {
+    // The member reaches NSDF through membership in the create action; this
+    // rule stays false, which is what keeps the two paths distinct.
     const member = actor({ divisionId: KI, headedDivisionIds: [], memberDivisionIds: [KI, NSDF] });
-    expect(canCreateDivisionTask(member, NSDF)).toBe(false);
-    expect(canCreateDivisionTask(member, KI)).toBe(false);
+    expect(canCreateTaskOutsideOwnDivisions(member, NSDF)).toBe(false);
   });
 });
 
@@ -400,33 +404,25 @@ describe('canManageTask — PMU team leader', () => {
   });
 
   it("manages a DIVISION task owned by a team member (not the leader's own)", () => {
-    const task = { ownerId: 'teammate-a', createdById: 'teammate-a', divisionId: KI, visibility: 'division' };
+    const task = { ownerId: 'teammate-a', createdById: 'teammate-a', divisionId: KI };
     expect(canManageTask(leader(), task)).toBe(true);
-  });
-
-  it("does NOT manage a teammate's PERSONAL task (stays private to its creator)", () => {
-    const task = { ownerId: 'teammate-a', createdById: 'teammate-a', divisionId: KI, visibility: 'personal' };
-    expect(canManageTask(leader(), task)).toBe(false);
-    // …and with visibility unknown, the leader branch fails closed.
-    const noVis = { ownerId: 'teammate-a', createdById: 'teammate-a', divisionId: KI };
-    expect(canManageTask(leader(), noVis)).toBe(false);
   });
 
   it('does NOT manage a task owned by a non-team member in the same division', () => {
     // A non-PMU ministry task in the same division: owner is not on the team.
-    const task = { ownerId: 'ministry-officer', createdById: 'ministry-officer', divisionId: KI, visibility: 'division' };
+    const task = { ownerId: 'ministry-officer', createdById: 'ministry-officer', divisionId: KI };
     expect(canManageTask(leader(), task)).toBe(false);
   });
 
   it('is inert for a normal caller with no team (undefined/empty)', () => {
-    const task = { ownerId: 'teammate-a', createdById: 'teammate-a', divisionId: KI, visibility: 'division' };
+    const task = { ownerId: 'teammate-a', createdById: 'teammate-a', divisionId: KI };
     expect(canManageTask(leader({ pmuTeamMemberIds: undefined }), task)).toBe(false);
     expect(canManageTask(leader({ pmuTeamMemberIds: [] }), task)).toBe(false);
   });
 
   it('still lets the leader manage their own / created tasks (ownership rule)', () => {
     expect(
-      canManageTask(leader(), { ownerId: 'leader-1', createdById: 'x', divisionId: MEDIA, visibility: 'personal' }),
+      canManageTask(leader(), { ownerId: 'leader-1', createdById: 'x', divisionId: MEDIA }),
     ).toBe(true);
   });
 });

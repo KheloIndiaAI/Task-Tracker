@@ -234,10 +234,6 @@ const createUserSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'on'),
-  canSeePersonalTasks: z
-    .string()
-    .optional()
-    .transform((v) => v === 'on'),
   canAddJsComment: z
     .string()
     .optional()
@@ -278,7 +274,6 @@ export async function createUserAction(
     isSuperAdmin: formData.get('isSuperAdmin'),
     canAccessDocumentCentre: formData.get('canAccessDocumentCentre'),
     canAccessBusinessCards: formData.get('canAccessBusinessCards'),
-    canSeePersonalTasks: formData.get('canSeePersonalTasks'),
     canAddJsComment: formData.get('canAddJsComment'),
     canGenerateReports: formData.get('canGenerateReports'),
   });
@@ -340,7 +335,6 @@ export async function createUserAction(
           isSuperAdmin: parsed.data.isSuperAdmin ?? false,
           canAccessDocumentCentre: parsed.data.canAccessDocumentCentre ?? false,
           canAccessBusinessCards: parsed.data.canAccessBusinessCards ?? false,
-          canSeePersonalTasks: parsed.data.canSeePersonalTasks ?? false,
           canAddJsComment: parsed.data.canAddJsComment ?? false,
           canGenerateReports: parsed.data.canGenerateReports ?? false,
           forcePasswordChange: parsed.data.forcePasswordChange ?? true,
@@ -368,7 +362,6 @@ export async function createUserAction(
       isSuperAdmin: created.isSuperAdmin,
       canAccessDocumentCentre: created.canAccessDocumentCentre,
       canAccessBusinessCards: created.canAccessBusinessCards,
-      canSeePersonalTasks: created.canSeePersonalTasks,
       canAddJsComment: created.canAddJsComment,
       canGenerateReports: created.canGenerateReports,
     });
@@ -412,10 +405,6 @@ const updateUserSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'on'),
-  canSeePersonalTasks: z
-    .string()
-    .optional()
-    .transform((v) => v === 'on'),
   canAddJsComment: z
     .string()
     .optional()
@@ -452,7 +441,6 @@ export async function updateUserAction(
     isSuperAdmin: formData.get('isSuperAdmin'),
     canAccessDocumentCentre: formData.get('canAccessDocumentCentre'),
     canAccessBusinessCards: formData.get('canAccessBusinessCards'),
-    canSeePersonalTasks: formData.get('canSeePersonalTasks'),
     canAddJsComment: formData.get('canAddJsComment'),
     canGenerateReports: formData.get('canGenerateReports'),
   });
@@ -480,7 +468,6 @@ export async function updateUserAction(
       isSuperAdmin: true,
       canAccessDocumentCentre: true,
       canAccessBusinessCards: true,
-      canSeePersonalTasks: true,
       canAddJsComment: true,
       canGenerateReports: true,
     },
@@ -562,7 +549,6 @@ export async function updateUserAction(
           isSuperAdmin: parsed.data.isSuperAdmin,
           canAccessDocumentCentre: parsed.data.canAccessDocumentCentre,
           canAccessBusinessCards: parsed.data.canAccessBusinessCards,
-          canSeePersonalTasks: parsed.data.canSeePersonalTasks,
           canAddJsComment: parsed.data.canAddJsComment,
           canGenerateReports: parsed.data.canGenerateReports,
         },
@@ -599,7 +585,6 @@ export async function updateUserAction(
       isSuperAdmin: updated.isSuperAdmin,
       canAccessDocumentCentre: updated.canAccessDocumentCentre,
       canAccessBusinessCards: updated.canAccessBusinessCards,
-      canSeePersonalTasks: updated.canSeePersonalTasks,
       canAddJsComment: updated.canAddJsComment,
       canGenerateReports: updated.canGenerateReports,
     });
@@ -636,19 +621,6 @@ export async function updateUserAction(
         updated.id,
         { canAccessBusinessCards: before.canAccessBusinessCards },
         { canAccessBusinessCards: updated.canAccessBusinessCards },
-      );
-    }
-
-    // Personal task visibility decides whether this user can read colleagues'
-    // private tasks, so it gets its own entry rather than hiding inside the
-    // generic user_update diff.
-    if (before.canSeePersonalTasks !== updated.canSeePersonalTasks) {
-      await audit(
-        guard.userId,
-        'role_change',
-        updated.id,
-        { canSeePersonalTasks: before.canSeePersonalTasks },
-        { canSeePersonalTasks: updated.canSeePersonalTasks },
       );
     }
 

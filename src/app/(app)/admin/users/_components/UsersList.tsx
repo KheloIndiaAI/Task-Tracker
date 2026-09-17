@@ -38,7 +38,6 @@ export type UserRow = {
   isSuperAdmin: boolean;
   canAccessDocumentCentre: boolean;
   canAccessBusinessCards: boolean;
-  canSeePersonalTasks: boolean;
   canAddJsComment: boolean;
   canGenerateReports: boolean;
   lastLogin: Date | null;
@@ -275,7 +274,6 @@ function rowToDefaults(u: UserRow): UserFormDefaults {
     isSuperAdmin: u.isSuperAdmin,
     canAccessDocumentCentre: u.canAccessDocumentCentre,
     canAccessBusinessCards: u.canAccessBusinessCards,
-    canSeePersonalTasks: u.canSeePersonalTasks,
     canAddJsComment: u.canAddJsComment,
     canGenerateReports: u.canGenerateReports,
   };
