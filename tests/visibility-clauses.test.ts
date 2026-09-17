@@ -7,7 +7,7 @@ import {
 
 /**
  * Clauses every caller gets before any role branch: owner, collaborator,
- * personal-created, and @mentioned. Named so adding another base clause does
+ * created, and @mentioned. Named so adding another base clause does
  * not mean re-counting by hand in every role test below.
  */
 const BASE_CLAUSES = 4;
@@ -31,52 +31,41 @@ function caller(overrides: Partial<CallerSummary> = {}): CallerSummary {
 /** The division-scope clause pushed after the own/collaborator pair. */
 function divisionClause(clauses: ReturnType<typeof buildVisibilityClausesFrom>) {
   return clauses.find(
-    (c) => 'divisionId' in c && c.visibility === 'division',
+    (c) => 'divisionId' in c && typeof c.divisionId === 'object',
   ) as { divisionId?: { in?: string[] } } | undefined;
 }
 
-/**
- * The ROLE-based personal clause, if the caller's role grants one. Skips the
- * base clauses, so the creator's own `{ createdById, personal }` clause is
- * never mistaken for a leadership grant.
- */
-function personalRoleClause(clauses: ReturnType<typeof buildVisibilityClausesFrom>) {
-  return clauses.slice(BASE_CLAUSES).find((c) => c.visibility === 'personal') as
-    | { visibility?: string; divisionId?: { in?: string[] } }
-    | undefined;
-}
-
 describe('buildVisibilityClausesFrom — base clauses', () => {
-  it('always includes own, collaborated, and personal-created tasks first', () => {
+  it('always includes own, collaborated, and created tasks first', () => {
     const clauses = buildVisibilityClausesFrom(caller(), []);
     expect(clauses[0]).toEqual({ ownerId: 'me' });
     expect(clauses[1]).toEqual({ collaborators: { some: { userId: 'me' } } });
-    expect(clauses[2]).toEqual({ createdById: 'me', visibility: 'personal' });
+    expect(clauses[2]).toEqual({ createdById: 'me' });
   });
 
-  it('the creator can see a personal task they created but assigned away', () => {
-    // A Division Head / Super Admin who sets a task Personal and assigns it
-    // to someone else keeps it in their own Personal list.
+  it('the creator keeps sight of a task they created but assigned away', () => {
     const clauses = buildVisibilityClausesFrom(caller(), []);
-    expect(clauses).toContainEqual({ createdById: 'me', visibility: 'personal' });
+    expect(clauses).toContainEqual({ createdById: 'me' });
   });
 
-  it('emits no role-based personal clause for non-leadership roles', () => {
-    // Personal tasks reach these roles only via the base clauses (owner /
-    // collaborator / creator / mentioned). Leadership is covered separately in
-    // "personal-task visibility for leadership" below.
+  it('no clause anywhere still mentions the removed visibility field', () => {
+    // The personal/division split is gone (2026-09-17). A stray
+    // `visibility` key would now be a Prisma error, not a filter.
     const variants: CallerSummary[] = [
       caller({ hierarchySlot: 'section_officer' }),
       caller({ hierarchySlot: 'aso' }),
       caller({ hierarchySlot: 'consultant' }),
-      caller({ isPmu: true }),
+      caller({ hierarchySlot: 'js' }),
+      caller({ hierarchySlot: 'osd' }),
+      caller({ isSuperAdmin: true }),
+      caller({ isPmu: true, pmuId: 'div-pmu' }),
     ];
     for (const v of variants) {
-      // No headship — headship grants personal reach on its own, whatever the slot.
-      const clauses = buildVisibilityClausesFrom(v, []);
-      for (const c of clauses.slice(BASE_CLAUSES)) {
-        expect(c.visibility).toBe('division');
-      }
+      const clauses = buildVisibilityClausesFrom(v, [NSDF], ['me'], {
+        pmuParentDivisionId: KI,
+        pmuDivisionIds: [NSDF],
+      });
+      for (const c of clauses) expect('visibility' in c).toBe(false);
     }
   });
 });
@@ -160,17 +149,17 @@ describe('buildVisibilityClausesFrom — multi-division membership', () => {
     // The extra (NSDF) board is visible…
     expect(divisionClause(clauses)?.divisionId?.in).toEqual([NSDF]);
     // …alongside the PMU-team owner clause, and the home (KI) board is NOT leaked.
-    expect(clauses).toContainEqual({ visibility: 'division', ownerId: { in: ['me'] } });
+    expect(clauses).toContainEqual({ ownerId: { in: ['me'] } });
   });
 });
 
 describe('buildVisibilityClausesFrom — roles', () => {
-  it('super admin and OSD see everything, division-unfiltered, personal included', () => {
+  it('super admin and OSD see everything — one unfiltered clause', () => {
     for (const me of [caller({ isSuperAdmin: true }), caller({ hierarchySlot: 'osd' })]) {
       const clauses = buildVisibilityClausesFrom(me, []);
-      expect(clauses).toHaveLength(BASE_CLAUSES + 2);
-      expect(clauses[BASE_CLAUSES]).toEqual({ visibility: 'division' });
-      expect(clauses[BASE_CLAUSES + 1]).toEqual({ visibility: 'personal' });
+      expect(clauses).toHaveLength(BASE_CLAUSES + 1);
+      // Prisma reads {} as "no filter", so this OR branch matches every task.
+      expect(clauses[BASE_CLAUSES]).toEqual({});
     }
   });
 
@@ -180,13 +169,13 @@ describe('buildVisibilityClausesFrom — roles', () => {
   });
 
   it('all division users see division tasks regardless of who created them', () => {
-    // The clause filters on divisionId + visibility only — no ownerId or
-    // createdById restriction, so Super Admin- or head-created tasks in
-    // the division are visible to every division user.
+    // The clause filters on divisionId only — no ownerId or createdById
+    // restriction, so Super Admin- or head-created tasks in the division are
+    // visible to every division user.
     const clauses = buildVisibilityClausesFrom(caller({ hierarchySlot: 'section_officer' }), []);
     const clause = divisionClause(clauses);
     expect(clause).toBeDefined();
-    expect(Object.keys(clause as object).sort()).toEqual(['divisionId', 'visibility']);
+    expect(Object.keys(clause as object)).toEqual(['divisionId']);
   });
 
   it('a division head sees home plus every headed division', () => {
@@ -205,10 +194,7 @@ describe('buildVisibilityClausesFrom — roles', () => {
 
   it('JS keeps the priority-board surface', () => {
     const clauses = buildVisibilityClausesFrom(caller({ hierarchySlot: 'js' }), []);
-    expect(clauses[BASE_CLAUSES]).toEqual({
-      visibility: 'division',
-      jsPriorityLane: { not: null },
-    });
+    expect(clauses[BASE_CLAUSES]).toEqual({ jsPriorityLane: { not: null } });
     expect(clauses).toHaveLength(BASE_CLAUSES + 1);
   });
 
@@ -222,7 +208,7 @@ describe('buildVisibilityClausesFrom — roles', () => {
     const clauses = buildVisibilityClausesFrom(caller({ isPmu: true }), [], team);
     // Base clauses + the owner-scoped PMU clause — no division clause.
     expect(clauses).toHaveLength(BASE_CLAUSES + 1);
-    expect(clauses[BASE_CLAUSES]).toEqual({ visibility: 'division', ownerId: { in: team } });
+    expect(clauses[BASE_CLAUSES]).toEqual({ ownerId: { in: team } });
     // Crucially, no bare divisionId clause that would leak the division board.
     expect(clauses.some((c) => 'divisionId' in c)).toBe(false);
   });
@@ -232,85 +218,7 @@ describe('buildVisibilityClausesFrom — roles', () => {
     // The delegated-division clause is still present…
     expect(divisionClause(clauses)?.divisionId?.in).toEqual([NSDF]);
     // …alongside the PMU-team owner clause.
-    expect(clauses).toContainEqual({ visibility: 'division', ownerId: { in: ['me'] } });
-  });
-});
-
-describe('buildVisibilityClausesFrom — personal-task visibility grant', () => {
-  it('super admin and OSD read personal tasks by role, without the grant', () => {
-    for (const me of [caller({ isSuperAdmin: true }), caller({ hierarchySlot: 'osd' })]) {
-      // canSeePersonalTasks deliberately omitted — their access is role-based.
-      expect(buildVisibilityClausesFrom(me, [])).toContainEqual({ visibility: 'personal' });
-    }
-  });
-
-  it('the grant covers every member division', () => {
-    const clauses = buildVisibilityClausesFrom(
-      caller({ hierarchySlot: 'director', divisionId: KI }),
-      [],
-      [],
-      { memberDivisionIds: [KI, NSDF], canSeePersonalTasks: true },
-    );
-    expect(personalRoleClause(clauses)?.divisionId?.in?.sort()).toEqual([KI, NSDF].sort());
-  });
-
-  it('the grant covers headed divisions alongside member ones', () => {
-    const clauses = buildVisibilityClausesFrom(
-      caller({ hierarchySlot: 'deputy_secretary', divisionId: ABD }),
-      [NSDF],
-      [],
-      { memberDivisionIds: [ABD], canSeePersonalTasks: true },
-    );
-    expect(personalRoleClause(clauses)?.divisionId?.in?.sort()).toEqual([ABD, NSDF].sort());
-  });
-
-  it('works for any slot — the flag decides, not the rank', () => {
-    // A Section Officer the Super Admin has explicitly granted it.
-    const clauses = buildVisibilityClausesFrom(
-      caller({ hierarchySlot: 'section_officer', divisionId: KI }),
-      [],
-      [],
-      { canSeePersonalTasks: true },
-    );
-    expect(personalRoleClause(clauses)?.divisionId?.in).toEqual([KI]);
-  });
-
-  it('grants nothing without the flag, whatever the slot or headship', () => {
-    // Turning the toggle off genuinely removes the access — there is no
-    // slot-shaped hole left behind for leadership ranks.
-    for (const me of [
-      caller({ hierarchySlot: 'director' }),
-      caller({ hierarchySlot: 'deputy_secretary' }),
-      caller({ hierarchySlot: 'under_secretary' }),
-      caller({ hierarchySlot: 'section_officer' }),
-      caller({ hierarchySlot: 'aso' }),
-      caller({ hierarchySlot: 'js' }),
-      caller({ hierarchySlot: 'hmyas' }),
-    ]) {
-      expect(personalRoleClause(buildVisibilityClausesFrom(me, [NSDF]))).toBeUndefined();
-    }
-  });
-
-  it('never lets a PMU member reach personal tasks, even with the flag set', () => {
-    const clauses = buildVisibilityClausesFrom(
-      caller({ isPmu: true, pmuId: 'div-pmu', hierarchySlot: 'director' }),
-      [],
-      ['me', 'mate-1'],
-      { memberDivisionIds: [KI], canSeePersonalTasks: true },
-    );
-    // The PMU branch returns before the grant is considered — isolation wins.
-    expect(personalRoleClause(clauses)).toBeUndefined();
-  });
-
-  it('never lets a JS user reach personal tasks, even with the flag set', () => {
-    const clauses = buildVisibilityClausesFrom(
-      caller({ hierarchySlot: 'js', divisionId: KI }),
-      [],
-      [],
-      { canSeePersonalTasks: true },
-    );
-    // The JS branch also returns early; JS keeps its priority-board surface.
-    expect(personalRoleClause(clauses)).toBeUndefined();
+    expect(clauses).toContainEqual({ ownerId: { in: ['me'] } });
   });
 });
 
@@ -339,19 +247,7 @@ describe('buildVisibilityClausesFrom — a division’s PMUs', () => {
     );
   });
 
-  it('the personal grant reaches PMU members’ personal tasks', () => {
-    // The point of the change: a PMU team's private work is visible to the
-    // same division leadership as everyone else's in that division.
-    const clauses = buildVisibilityClausesFrom(
-      caller({ hierarchySlot: 'director', divisionId: KI }),
-      [],
-      [],
-      { canSeePersonalTasks: true, pmuDivisionIds: [KI_PMU] },
-    );
-    expect(personalRoleClause(clauses)?.divisionId?.in?.sort()).toEqual([KI, KI_PMU].sort());
-  });
-
-  it('without the grant, a PMU board is visible but its personal tasks are not', () => {
+  it('a PMU board folds into the officer’s own division clause', () => {
     const clauses = buildVisibilityClausesFrom(
       caller({ hierarchySlot: 'director', divisionId: KI }),
       [],
@@ -359,7 +255,6 @@ describe('buildVisibilityClausesFrom — a division’s PMUs', () => {
       { pmuDivisionIds: [KI_PMU] },
     );
     expect(divisionClause(clauses)?.divisionId?.in).toContain(KI_PMU);
-    expect(personalRoleClause(clauses)).toBeUndefined();
   });
 
   it('a PMU member gains nothing — isolation is unaffected', () => {
@@ -369,10 +264,9 @@ describe('buildVisibilityClausesFrom — a division’s PMUs', () => {
       caller({ isPmu: true, divisionId: KI }),
       [],
       ['me'],
-      { pmuDivisionIds: ['div-other-pmu'], canSeePersonalTasks: true },
+      { pmuDivisionIds: ['div-other-pmu'] },
     );
     expect(clauses.some((c) => 'divisionId' in c)).toBe(false);
-    expect(personalRoleClause(clauses)).toBeUndefined();
   });
 
   it('is inert when the caller’s divisions have no PMU', () => {
@@ -395,7 +289,7 @@ describe('buildVisibilityClausesFrom — PMU team leader read access', () => {
       [],
       { pmuTeamLeaderMemberIds: team },
     );
-    expect(clauses).toContainEqual({ visibility: 'division', ownerId: { in: team } });
+    expect(clauses).toContainEqual({ ownerId: { in: team } });
     // It never surfaces a bare division board, so non-PMU ministry tasks stay hidden.
     expect(clauses.some((c) => 'divisionId' in c)).toBe(false);
   });
@@ -422,7 +316,6 @@ describe('buildVisibilityClausesFrom — a division task shown DOWN to its PMU',
       { pmuParentDivisionId: NSDF },
     );
     expect(clauses).toContainEqual({
-      visibility: 'division',
       sharedWithPmuTeam: true,
       divisionId: NSDF,
     });
@@ -452,7 +345,7 @@ describe('buildVisibilityClausesFrom — a division task shown DOWN to its PMU',
       { pmuParentDivisionId: NSDF },
     );
     const unrestricted = clauses.filter(
-      (c) => 'divisionId' in c && !('sharedWithPmuTeam' in c) && c.visibility === 'division',
+      (c) => 'divisionId' in c && !('sharedWithPmuTeam' in c),
     );
     expect(unrestricted).toHaveLength(0);
   });
@@ -494,7 +387,6 @@ describe('buildVisibilityClausesFrom — PMU team share', () => {
       ['me'],
     );
     expect(clauses).toContainEqual({
-      visibility: 'division',
       sharedWithPmuTeam: true,
       divisionId: PMU,
     });
@@ -510,7 +402,7 @@ describe('buildVisibilityClausesFrom — PMU team share', () => {
     // The head still sees the task via the owner-scoped PMU clause, but it is
     // never surfaced to them as a whole-team share.
     expect(clauses.some((c) => 'sharedWithPmuTeam' in c)).toBe(false);
-    expect(clauses).toContainEqual({ visibility: 'division', ownerId: { in: ['me'] } });
+    expect(clauses).toContainEqual({ ownerId: { in: ['me'] } });
   });
 
   it('emits no team-share clause when the PMU id is unknown', () => {

@@ -364,8 +364,8 @@ export default async function TasksPage({ searchParams }: PageProps) {
               </TaskGroupStateProvider>
             )
           ) : (
-            // Always render all three segments — even empty ones — so the
-            // three-part structure is visible on every login.
+            // Always render both segments — even empty ones — so the
+            // structure is visible on every login.
             <div className="space-y-6">
               {segments!.map((segment) => {
                 // Built once and placed either on its own (the long-standing
@@ -471,7 +471,6 @@ function TaskRow({
     ownerId: t.ownerId,
     createdById: t.createdById,
     divisionId: t.divisionId,
-    visibility: t.visibility,
   });
 
   return (
@@ -548,7 +547,6 @@ function toLaneBoardTasks(
           ownerId: t.ownerId,
           createdById: t.createdById,
           divisionId: t.divisionId,
-          visibility: t.visibility,
         }) || contributorTaskIds.has(t.id),
     };
   });
@@ -574,7 +572,6 @@ function toGridTaskProps(
     ownerId: t.ownerId,
     createdById: t.createdById,
     divisionId: t.divisionId,
-    visibility: t.visibility,
   });
 
   return {
@@ -608,24 +605,22 @@ function toGridTaskProps(
 }
 
 /**
- * The three segments of the tasks view, in display order:
- *   1. Tasks assigned to me — division tasks I currently own (includes any
- *                             task transferred or handed to me)
- *   2. Personal tasks — personal-visibility tasks I own, created, or am a
- *                             collaborator on (kept off the division board;
- *                             also readable by leadership over my division —
- *                             see buildVisibilityClausesFrom)
- *   3. Other tasks of my division — the rest of the division's tasks (or,
- *                             for a PMU member, the rest of their PMU team's)
- * Personal tasks sit above the division's other tasks so a user's own
- * private work stays close to the tasks assigned to them, ahead of the
- * broader division board.
- * Every visible task falls in exactly one segment (personal vs division,
- * division split by ownership). All three segments are always shown, even
+ * The two segments of the tasks view, in display order:
+ *   1. Tasks assigned to me — tasks I currently own (including any handed or
+ *                             transferred to me)
+ *   2. Other tasks of my division — the rest of the division's tasks (or, for
+ *                             a PMU member, the rest of their PMU team's)
+ *
+ * There used to be a third, "Personal tasks", holding personal-visibility
+ * work. The personal/division split was removed on 2026-09-17 — every task
+ * belongs to a division and the whole division reads it — so those tasks now
+ * fall into one of the two segments by ownership like everything else.
+ *
+ * Every visible task falls in exactly one segment. Both are always shown, even
  * when empty, so the structure is consistent on every login.
  */
 type RelationSegment = {
-  key: 'assigned' | 'others' | 'personal';
+  key: 'assigned' | 'others';
   label: string;
   subtitle?: string;
   emptyLabel: string;
@@ -647,17 +642,11 @@ function segmentTasksByRelation(
     isPmu &&
     !isExcludedPmuHead &&
     myPmuId !== null &&
-    t.visibility === 'division' &&
     t.sharedWithPmuTeam &&
     t.divisionId === myPmuId;
 
-  const personal = tasks.filter((t) => t.visibility === 'personal');
-  const assigned = tasks.filter(
-    (t) => t.visibility === 'division' && (t.ownerId === meId || isSharedToMyPmuTeam(t)),
-  );
-  const others = tasks.filter(
-    (t) => t.visibility === 'division' && t.ownerId !== meId && !isSharedToMyPmuTeam(t),
-  );
+  const assigned = tasks.filter((t) => t.ownerId === meId || isSharedToMyPmuTeam(t));
+  const others = tasks.filter((t) => t.ownerId !== meId && !isSharedToMyPmuTeam(t));
 
   return [
     {
@@ -666,14 +655,6 @@ function segmentTasksByRelation(
       emptyLabel: 'No tasks are assigned to you.',
       icon: 'ti-user-check',
       tasks: assigned,
-    },
-    {
-      key: 'personal',
-      label: 'Personal tasks',
-      subtitle: 'Visible to me, collaborators and leadership',
-      emptyLabel: 'You have not created any personal tasks.',
-      icon: 'ti-lock',
-      tasks: personal,
     },
     {
       key: 'others',

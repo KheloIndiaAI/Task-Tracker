@@ -8,7 +8,6 @@ import { auth } from '@/lib/auth';
 import { parseCsv, rowsToObjects } from '@/lib/csv';
 import { prisma } from '@/lib/db';
 import { parseDueDateInput } from '@/lib/format';
-import { canCreateDivisionTask, getRbacActor } from '@/lib/rbac';
 import { nextTaskRefNumber } from '@/lib/task-ref';
 
 /**
@@ -36,7 +35,6 @@ export type ImportPreviewRow = {
     description?: string;
     dueDate?: string;
     priority: 'low' | 'medium' | 'high' | 'urgent';
-    visibility: 'division' | 'personal';
     divisionId: string;
     divisionName: string;
     ownerId: string;
@@ -81,7 +79,6 @@ const REQUIRED_HEADERS = [
   'description',
   'due_date',
   'priority',
-  'visibility',
   'division_name',
   'owner_username',
   'tags',
@@ -103,15 +100,6 @@ const rowSchema = z.object({
     .refine(
       (s) => ['low', 'medium', 'high', 'urgent'].includes(s),
       'priority must be low / medium / high / urgent',
-    ),
-  visibility: z
-    .string()
-    .trim()
-    .optional()
-    .transform((s) => (s ? s.toLowerCase() : 'division'))
-    .refine(
-      (s) => ['division', 'personal'].includes(s),
-      'visibility must be division or personal',
     ),
   division_name: z.string().trim().min(1, 'division_name is required'),
   owner_username: z.string().trim().min(1, 'owner_username is required'),
@@ -231,7 +219,6 @@ export async function parseImportAction(
         description: parsed.data.description || undefined,
         dueDate: parsed.data.due_date || undefined,
         priority: parsed.data.priority as 'low' | 'medium' | 'high' | 'urgent',
-        visibility: parsed.data.visibility as 'division' | 'personal',
         divisionId: div.id,
         divisionName: div.name,
         ownerId: owner.id,
@@ -255,7 +242,6 @@ const commitPayloadSchema = z.object({
       description: z.string().optional(),
       dueDate: z.string().optional(),
       priority: z.enum(['low', 'medium', 'high', 'urgent']),
-      visibility: z.enum(['division', 'personal']),
       divisionId: z.string().uuid(),
       ownerId: z.string().uuid(),
       tagNames: z.array(z.string()),
@@ -333,17 +319,11 @@ export async function commitImportAction(
     }
   }
 
-  const actor = await getRbacActor(guard.userId);
-
   let createdCount = 0;
   let skippedCount = 0;
 
   for (const row of parsed.data.rows) {
     if (!validDivIds.has(row.divisionId) || !validOwnerIds.has(row.ownerId)) {
-      skippedCount++;
-      continue;
-    }
-    if (row.visibility === 'division' && actor && !canCreateDivisionTask(actor, row.divisionId)) {
       skippedCount++;
       continue;
     }
@@ -359,7 +339,6 @@ export async function commitImportAction(
             divisionId: row.divisionId,
             status: 'not_started',
             priority: row.priority,
-            visibility: row.visibility,
             dueDate: row.dueDate ? parseDueDateInput(row.dueDate) : null,
             createdById: guard.userId,
           },

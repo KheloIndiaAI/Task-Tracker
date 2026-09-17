@@ -144,16 +144,19 @@ export function canActAsHeadOf(actor: RbacActor, divisionId: string): boolean {
 }
 
 /**
- * Division-level task creation (visibility: 'division') — giving work on a
- * division's board is reserved for Super Admin, OSD, the division's head or an
- * active delegate (`headedDivisionIds` covers direct + delegated). Everyone
- * else creates personal tasks only. Crucially, mere MEMBERSHIP of a division
- * does NOT grant this — a non-head member creates personal tasks only, exactly
- * as in their home division. The same rule also gates changing an existing
- * task's visibility. (Moving a task into a different division is a separate,
+ * Whether the actor may place a task on a board that is not one of their own.
+ *
+ * Creating a task is NOT a head power — every user creates tasks on the board
+ * of a division they belong to, and everyone who reads that board reads the
+ * task (the personal/division split was removed on 2026-09-17). This rule
+ * covers only the wider reach: Super Admin and OSD may target any division,
+ * and a head may target the divisions they head. The create action adds a
+ * member's own divisions and a PMU member's own PMU on top.
+ *
+ * (Moving an existing task into a different division is a separate,
  * Super-Admin/OSD-only gate in `updateTaskFieldsAction` — not this rule.)
  */
-export function canCreateDivisionTask(actor: RbacActor, divisionId: string): boolean {
+export function canCreateTaskOutsideOwnDivisions(actor: RbacActor, divisionId: string): boolean {
   if (actor.isSuperAdmin || actor.isOsd) return true;
   return actor.headedDivisionIds.includes(divisionId);
 }
@@ -161,9 +164,9 @@ export function canCreateDivisionTask(actor: RbacActor, divisionId: string): boo
 /**
  * Division notice board — a short, division-wide announcement shown between
  * the division name and its task list on the grouped tasks list. Editing is
- * a head power, same reach as `canCreateDivisionTask`: Super Admin, OSD, the
+ * a head power: Super Admin, OSD, the
  * division's head, or an active delegate. Kept as its own named rule (not a
- * reuse of canCreateDivisionTask) since the two permissions are conceptually
+ * reuse of another rule) since these permissions are conceptually
  * distinct and free to diverge later even though they agree today.
  */
 export function canEditDivisionNotice(
@@ -217,7 +220,7 @@ export function canSetJsPriorityLane(
  *     to that division, which PMU isolation otherwise hides from them. Set by
  *     the division's head or an active delegate, because widening who can see
  *     a division's board is a head power — the same reasoning behind
- *     `canCreateDivisionTask` gating visibility changes.
+ *     the rule that gates placing work on a board that is not your own.
  *
  * OSD and Super Admin manage it wherever it means something.
  *
@@ -285,13 +288,10 @@ export function canSharePmuTeam(
  *     `headedDivisionIds` folds in live delegations. A delegate is the
  *     temporary head for the delegation's lifetime and manages its tasks
  *     exactly as the head would.
- *   - a PMU team leader, over any DIVISION-visibility task OWNED BY a member of
- *     their PMU team (`pmuTeamMemberIds`, resolved by `getPmuTeamMemberIds`).
- *     This scopes the leader's admin to the PMU team's own board tasks — never
- *     the wider division's ministry tasks, and never a teammate's PERSONAL task
- *     (a PMU leader gets no personal-task reach; the visibility scoper grants
- *     that to division leadership only, never to PMU roles). Management only:
- *     never delete.
+ *   - a PMU team leader, over any task OWNED BY a member of their PMU team
+ *     (`pmuTeamMemberIds`, resolved by `getPmuTeamMemberIds`). This scopes the
+ *     leader's admin to the team's own work, never the wider division's
+ *     ministry tasks. Management only: never delete.
  *
  * Pure so it can be unit-tested and shared verbatim by client and server.
  */
@@ -310,7 +310,7 @@ export function canManageTask(
      */
     pmuTeamMemberIds?: string[];
   },
-  task: { ownerId: string; createdById: string; divisionId: string; visibility?: string },
+  task: { ownerId: string; createdById: string; divisionId: string },
 ): boolean {
   if (task.ownerId === caller.id || task.createdById === caller.id) return true;
   if (caller.isSuperAdmin) return true;
@@ -319,13 +319,8 @@ export function canManageTask(
     return true;
   }
   if (caller.headedDivisionIds.includes(task.divisionId)) return true;
-  // A PMU team leader — only over the team's DIVISION tasks. A teammate's
-  // personal task is out of scope (it is off the leader's board too), so the
-  // management surface never exceeds what the leader can see.
-  return (
-    task.visibility === 'division' &&
-    (caller.pmuTeamMemberIds?.includes(task.ownerId) ?? false)
-  );
+  // A PMU team leader — over any task owned by someone on their team.
+  return caller.pmuTeamMemberIds?.includes(task.ownerId) ?? false;
 }
 
 /**

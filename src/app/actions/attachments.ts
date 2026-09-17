@@ -93,9 +93,9 @@ export async function canEditTaskAttachments(
     }),
     prisma.task.findUnique({
       where: { id: taskId },
-      select: { ownerId: true, createdById: true, visibility: true },
+      select: { ownerId: true, createdById: true },
     }),
-    // A PMU team leader may manage documents on their team's DIVISION tasks.
+    // A PMU team leader may manage documents on their team's tasks.
     getPmuTeamMemberIds(callerId),
   ]);
   if (!me || !task) return false;
@@ -104,7 +104,7 @@ export async function canEditTaskAttachments(
     me.hierarchySlot === 'osd' ||
     task.ownerId === callerId ||
     task.createdById === callerId ||
-    (task.visibility === 'division' && pmuTeamMemberIds.includes(task.ownerId))
+    pmuTeamMemberIds.includes(task.ownerId)
   );
 }
 

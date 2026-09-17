@@ -13,18 +13,18 @@ import {
 /**
  * Server-side visibility scoper for tasks.
  *
- * Division-wide model: every ministry (non-PMU) officer sees all
- * non-personal tasks in their own division, regardless of hierarchy slot —
- * a newly created division user sees the division's tasks from first
- * login. JS and OSD keep their wider surfaces; PMU isolation is unchanged.
+ * Division-wide model: every ministry (non-PMU) officer sees all tasks in
+ * their own division, regardless of hierarchy slot — a newly created division
+ * user sees the division's tasks from first login. JS and OSD keep their wider
+ * surfaces; PMU isolation is unchanged.
  *
  * Division heads additionally see every division they head — direct
  * headship (divisions.head_user_id) plus active access delegations. That
  * is how Mohd Zuber (home: Autonomous Bodies) also sees NSDF, and how a
  * delegate sees the delegated division for the window's duration.
  *
- * Personal-visibility tasks are NEVER returned to anyone but their owner,
- * including Super Admin and OSD.
+ * There is no per-task privacy setting — a task belongs to a division and is
+ * readable by everyone who reads that board. See buildVisibilityClausesFrom.
  */
 
 export type TaskFilter = 'all' | 'today' | 'overdue' | 'mine' | 'urgent' | 'completed' | 'js_priority';
@@ -192,7 +192,7 @@ export async function getPmusByParentDivision(
  * Returns clauses that are then composed with the filter clause in the page.
  */
 export async function buildVisibilityClauses(me: CallerSummary): Promise<Prisma.TaskWhereInput[]> {
-  const [headedDivisionIds, memberDivisionIds, pmuMemberIds, pmuParent, pmuTeamLeaderMemberIds, personalGrant] = await Promise.all([
+  const [headedDivisionIds, memberDivisionIds, pmuMemberIds, pmuParent, pmuTeamLeaderMemberIds] = await Promise.all([
     getHeadedDivisionIds(me.id),
     // Member divisions (home + admin-granted extras). Resolved by id here so
     // every task-read caller (list, counts, stats, search, calendar, priority
@@ -207,13 +207,6 @@ export async function buildVisibilityClauses(me: CallerSummary): Promise<Prisma.
     // (empty for everyone else). Resolved here so every task-read surface picks
     // it up uniformly.
     me.isPmu ? getPmuTeamMemberIds(me.id) : Promise.resolve<string[]>([]),
-    // The Super-Admin-managed "Personal task visibility" grant. Resolved here,
-    // by id, so every task-read surface picks it up without adding the column
-    // to its own `me` select — same approach as memberDivisionIds above.
-    prisma.user.findUnique({
-      where: { id: me.id },
-      select: { canSeePersonalTasks: true },
-    }),
   ]);
   // PMUs hanging off the caller's own divisions. Resolved after the sets above,
   // since those name the divisions to look under. Skipped for Super Admin and
@@ -229,7 +222,6 @@ export async function buildVisibilityClauses(me: CallerSummary): Promise<Prisma.
     pmuParentDivisionId: pmuParent?.id ?? null,
     memberDivisionIds,
     pmuTeamLeaderMemberIds,
-    canSeePersonalTasks: personalGrant?.canSeePersonalTasks ?? false,
     pmuDivisionIds,
   });
 }
@@ -276,9 +268,9 @@ export type VisibleTask = Task & {
 /**
  * Hard ceiling on one page of the tasks list.
  *
- * Raised from 200 on 2026-09-07. Leadership now reads personal tasks and their
- * divisions' PMU boards on top of the division work they already saw, which
- * pushed a Super Admin's ministry-wide list past the old ceiling. Past it, rows
+ * Raised from 200 on 2026-09-07. Leadership reads their divisions' PMU boards
+ * on top of the division work they already saw, which pushed a Super Admin's
+ * ministry-wide list past the old ceiling. Past it, rows
  * are dropped by `orderBy` — so a division's group badge quietly reported the
  * post-truncation count and looked like a visibility bug rather than a cap.
  *

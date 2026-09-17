@@ -21,7 +21,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { ACTOR_SUMMARY_SELECT, USER_SUMMARY_SELECT } from '@/lib/prisma-selects';
 import { initialsOf } from '@/lib/format';
-import { canCreateDivisionTask, getRbacActor } from '@/lib/rbac';
+import { canCreateTaskOutsideOwnDivisions, getRbacActor } from '@/lib/rbac';
 import { isS3Configured } from '@/lib/s3';
 import { buildTfVisibilityClause } from '@/lib/timeline-files';
 import { cn } from '@/lib/utils';
@@ -169,7 +169,7 @@ export default async function TimelineFileDetailPage({ params }: PageProps) {
     !isArchived && actor
       ? tf.markedTo
           .map((m) => m.division.id)
-          .filter((id) => canCreateDivisionTask(actor, id))
+          .filter((id) => canCreateTaskOutsideOwnDivisions(actor, id))
       : [];
   const canCreateTasks = creatableDivisionIds.length > 0;
 

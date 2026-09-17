@@ -36,31 +36,22 @@ export type VisibilityOptions = {
   /**
    * Divisions the caller is a MEMBER of: their home division plus any
    * admin-granted extra divisions (user_division_access). Grants FULL board
-   * visibility of each division's non-personal tasks. The home division is
-   * handled per role — an officer always sees their home board, a PMU member
-   * does NOT (PMU isolation is preserved), and a JS user sees the priority
-   * board rather than a home board — so only the EXTRA granted divisions widen
-   * the JS/PMU branches. Defaults to [me.divisionId] (home-only) when omitted.
+   * visibility of each division's tasks. The home division is handled per role
+   * — an officer always sees their home board, a PMU member does NOT (PMU
+   * isolation is preserved), and a JS user sees the priority board rather than
+   * a home board — so only the EXTRA granted divisions widen the JS/PMU
+   * branches. Defaults to [me.divisionId] (home-only) when omitted.
    * Populated by buildVisibilityClauses; this replaces the retired
    * cross-division allocation-link visibility.
    */
   memberDivisionIds?: string[];
   /**
    * When the caller is a PMU team leader, the ids of their PMU team (see
-   * `getPmuTeamMemberIds`). Grants owner-scoped visibility of the team's
-   * (non-personal) tasks so the leader can oversee and manage them — the read
-   * side of their PMU-team admin scope. Empty/omitted for everyone else.
+   * `getPmuTeamMemberIds`). Grants owner-scoped visibility of the team's tasks
+   * so the leader can oversee and manage them — the read side of their
+   * PMU-team admin scope. Empty/omitted for everyone else.
    */
   pmuTeamLeaderMemberIds?: string[];
-  /**
-   * The caller's `users.can_see_personal_tasks` grant — Super-Admin-managed,
-   * shown as "Personal task visibility" on Users > Create / Edit. When set, the
-   * caller reads other people's PERSONAL tasks in every division they are a
-   * member of or head. Super Admin and OSD read them by role and never consult
-   * this. Resolved by id in `buildVisibilityClauses`, so no read surface has to
-   * add it to its own `me` select.
-   */
-  canSeePersonalTasks?: boolean;
   /**
    * PMUs attached to the caller's own divisions (resolved by
    * `getPmuDivisionIdsFor`, which honours `pmu_parent_division_id` and falls
@@ -80,24 +71,14 @@ export type VisibilityOptions = {
  * of divisions they head (direct headships + active delegations) and, for
  * PMU members, the ids of everyone in their PMU (themselves + teammates).
  *
- * Personal tasks are visible to: their owner, their creator, anyone added as a
- * collaborator (the three base clauses below) — and, since 2026-09-07, to
- * leadership over the division the task belongs to:
- *
- *   - Super Admin and OSD — every personal task, ministry-wide, by role.
- *   - Any user carrying the `can_see_personal_tasks` grant — the personal tasks
- *     of every division they are a member of or head. Super Admin sets it per
- *     user ("Personal task visibility" on Users > Create / Edit); it is seeded
- *     on for Directors, Deputy Secretaries, Under Secretaries and sitting
- *     division heads.
- *
- * Everyone else sees no one else's personal tasks. PMU members are excluded
- * structurally — that branch returns before this grant is considered, so PMU
- * isolation holds even if the flag is set.
- *
- * "Personal" now means "off the division board and out of ministry-wide
- * aggregates", not "invisible to my chain"; the tasks list says so in as many
- * words.
+ * There is no per-task privacy setting: a task belongs to a division, and
+ * everyone who can read that division's board can read it. The old
+ * `tasks.visibility` enum ('personal' | 'division') and the
+ * `can_see_personal_tasks` grant that peered through it were removed on
+ * 2026-09-17 — every task that existed then became readable by its division,
+ * and none was deleted. The base clauses below still matter for reach ACROSS
+ * a board boundary: a task you own, created, collaborate on, or were
+ * @mentioned in stays readable even when its division is not yours.
  */
 export function buildVisibilityClausesFrom(
   me: CallerSummary,
@@ -110,11 +91,9 @@ export function buildVisibilityClausesFrom(
     { ownerId: me.id },
     // Always: tasks I'm explicitly added to as a collaborator.
     { collaborators: { some: { userId: me.id } } },
-    // Personal tasks I created — so the creator keeps sight of a Personal
-    // task even after assigning it to someone else. Scoped to `personal`
-    // so it never widens division-task visibility (division tasks I created
-    // are already covered by the role clauses below).
-    { createdById: me.id, visibility: 'personal' },
+    // Always: tasks I created — so the creator keeps sight of one after
+    // handing it to someone else, or after moving division.
+    { createdById: me.id },
     // Always: tasks where someone @mentioned me in the discussion. Pulling a
     // colleague into a conversation has to let them read what it is about —
     // without this the notification pointed at a task they could not open.
@@ -127,24 +106,18 @@ export function buildVisibilityClausesFrom(
     { comments: { some: { mentions: { has: me.id } } } },
   ];
 
-  // A PMU team leader additionally sees their PMU team's non-personal tasks
-  // (owner-scoped) — the read side of their team-admin scope. Empty for
-  // everyone else, so this is inert outside that role. Personal tasks a
-  // teammate owns stay private (the clause is `division`-scoped).
+  // A PMU team leader additionally sees their PMU team's tasks (owner-scoped)
+  // — the read side of their team-admin scope. Empty for everyone else, so
+  // this is inert outside that role.
   if (opts.pmuTeamLeaderMemberIds && opts.pmuTeamLeaderMemberIds.length > 0) {
-    clauses.push({
-      visibility: 'division',
-      ownerId: { in: opts.pmuTeamLeaderMemberIds },
-    });
+    clauses.push({ ownerId: { in: opts.pmuTeamLeaderMemberIds } });
   }
 
   if (me.isSuperAdmin || me.hierarchySlot === 'osd') {
-    // Super Admin + OSD see every task across the ministry — division AND
-    // personal, in every division and PMU. Written as two explicit clauses
-    // rather than one catch-all so the personal grant is impossible to miss
-    // when reading this rule.
-    clauses.push({ visibility: 'division' });
-    clauses.push({ visibility: 'personal' });
+    // Super Admin + OSD read every task across the ministry. An empty clause
+    // is Prisma's "no filter", so this OR branch matches everything — the
+    // whole point, and cheaper than enumerating divisions.
+    clauses.push({});
     return clauses;
   }
 
@@ -161,12 +134,9 @@ export function buildVisibilityClausesFrom(
   if (me.hierarchySlot === 'js') {
     // JS sees own + the JS Priority Board surface, plus any division they head
     // or hold a delegation for, plus any admin-granted extra division board.
-    clauses.push({
-      visibility: 'division',
-      jsPriorityLane: { not: null },
-    });
+    clauses.push({ jsPriorityLane: { not: null } });
     if (divisionIds.size > 0) {
-      clauses.push({ visibility: 'division', divisionId: { in: [...divisionIds] } });
+      clauses.push({ divisionId: { in: [...divisionIds] } });
     }
     return clauses;
   }
@@ -178,18 +148,14 @@ export function buildVisibilityClausesFrom(
     // ministry tasks. A delegation still grants head-level visibility
     // over the delegated division.
     if (pmuMemberIds.length > 0) {
-      clauses.push({ visibility: 'division', ownerId: { in: pmuMemberIds } });
+      clauses.push({ ownerId: { in: pmuMemberIds } });
     }
     // Tasks a PMU team leader explicitly shared with the whole PMU team.
     // Live: matches any current member of the caller's PMU at read time.
     // The PMU's home-division head is excluded (they already see it via the
     // owner-scoped clause; it is just not treated as a whole-team share).
     if (me.pmuId && !opts.isPmuParentDivisionHead) {
-      clauses.push({
-        visibility: 'division',
-        sharedWithPmuTeam: true,
-        divisionId: me.pmuId,
-      });
+      clauses.push({ sharedWithPmuTeam: true, divisionId: me.pmuId });
     }
     // The other direction of the same switch: a task on the PARENT division's
     // own board, which the head opted to show to the division's PMU team(s).
@@ -198,43 +164,25 @@ export function buildVisibilityClausesFrom(
     // power (canSharePmuTeam), so the hole is opened per task by the person
     // who owns that board. Everything else about isolation is unchanged.
     if (opts.pmuParentDivisionId) {
-      clauses.push({
-        visibility: 'division',
-        sharedWithPmuTeam: true,
-        divisionId: opts.pmuParentDivisionId,
-      });
+      clauses.push({ sharedWithPmuTeam: true, divisionId: opts.pmuParentDivisionId });
     }
     if (divisionIds.size > 0) {
-      clauses.push({ visibility: 'division', divisionId: { in: [...divisionIds] } });
+      clauses.push({ divisionId: { in: [...divisionIds] } });
     }
     return clauses;
   }
 
-  // Ministry officers (director down to ASO) — all non-personal tasks in every
-  // division they are a MEMBER of (home + admin-granted extras), plus every
-  // division they head. Without the home-division clause a fresh division user
-  // saw an empty board on first login.
+  // Ministry officers (director down to ASO) — every task in every division
+  // they are a MEMBER of (home + admin-granted extras), plus every division
+  // they head. Without the home-division clause a fresh division user saw an
+  // empty board on first login.
   divisionIds.add(me.divisionId);
   // A division's PMUs count as part of it here: an officer of Khelo India reads
   // the KI PMU's board too. This is the read side of a rule the create side
   // already applies, and of PERMISSIONS.md's "ministry officers in a division
   // can see their PMU's tasks".
   for (const d of opts.pmuDivisionIds ?? []) divisionIds.add(d);
-  clauses.push({ visibility: 'division', divisionId: { in: [...divisionIds] } });
+  clauses.push({ divisionId: { in: [...divisionIds] } });
 
-  // With the Super-Admin-managed grant, this user also reads the PERSONAL tasks
-  // of every division they belong to or head — their divisions' PMUs included,
-  // so a PMU member's private work is visible to the same division leadership
-  // as everyone else's. Without the grant they read none but their own: the
-  // toggle is the whole switch, so turning it off actually takes the access
-  // away rather than leaving a slot-shaped hole.
-  if (opts.canSeePersonalTasks) {
-    const personalDivisionIds = new Set(headedDivisionIds);
-    for (const d of memberDivisionIds) personalDivisionIds.add(d);
-    for (const d of opts.pmuDivisionIds ?? []) personalDivisionIds.add(d);
-    if (personalDivisionIds.size > 0) {
-      clauses.push({ visibility: 'personal', divisionId: { in: [...personalDivisionIds] } });
-    }
-  }
   return clauses;
 }

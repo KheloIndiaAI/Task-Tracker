@@ -13,7 +13,7 @@ import { countWords, MAX_LATEST_STATUS_WORDS, parseDueDateInput } from '@/lib/fo
 import {
   canActAsHeadOf,
   canAssignTaskTo,
-  canCreateDivisionTask,
+  canCreateTaskOutsideOwnDivisions,
   canManageTask,
   canSetJsPriorityLane,
   canSharePmuTeam,
@@ -26,6 +26,7 @@ import {
 } from '@/lib/rbac';
 import {
   buildVisibilityClauses,
+  getPmuDivisionIdsFor,
   getPmuParentDivisionHeadId,
   getPmusByParentDivision,
 } from '@/lib/visibility';
@@ -54,7 +55,6 @@ import { nextSubtaskRefNumber, nextTaskRefNumber } from '@/lib/task-ref';
 
 const STATUSES = ['not_started', 'in_progress', 'awaiting_input', 'on_hold', 'completed'] as const;
 const PRIORITY = ['low', 'medium', 'high', 'urgent'] as const;
-const VISIBILITY = ['division', 'personal'] as const;
 
 type ActionState = {
   ok: boolean;
@@ -128,7 +128,6 @@ async function spawnRecurringTask(taskId: string, actorId: string): Promise<void
       divisionId: true,
       subDivisionId: true,
       priority: true,
-      visibility: true,
       dueDate: true,
       recurrenceRule: true,
       createdById: true,
@@ -153,7 +152,6 @@ async function spawnRecurringTask(taskId: string, actorId: string): Promise<void
         divisionId: task.divisionId,
         subDivisionId: task.subDivisionId,
         priority: task.priority,
-        visibility: task.visibility,
         dueDate: nextDue,
         recurrenceRule: task.recurrenceRule,
         createdById: task.createdById,
@@ -173,7 +171,7 @@ async function spawnRecurringTask(taskId: string, actorId: string): Promise<void
 
 async function canEditTask(
   callerId: string,
-  task: { ownerId: string; createdById: string; divisionId: string; visibility: string },
+  task: { ownerId: string; createdById: string; divisionId: string },
 ): Promise<boolean> {
   // Owner / creator never need a role lookup — the creator keeps this even
   // after handing ownership off (see canManageTask).
@@ -201,14 +199,16 @@ async function canEditTask(
  * simply owning the task is NOT enough: a normal user who receives a task
  * (e.g. via transfer) can work it (status, subtasks) but cannot redefine
  * or delete it. Allowed for a Super Admin, OSD, JS, a director of the
- * task's division, or its head — and for a user's own personal task, which
- * only they can see.
+ * task's division, or its head — and for the person who CREATED the task, who
+ * defined it in the first place and keeps the right to correct it. (Before the
+ * personal/division split was removed this last case was "your own personal
+ * task"; a creator is the nearest honest equivalent.)
  */
 async function canEditTaskDetails(
   callerId: string,
-  task: { ownerId: string; divisionId: string; visibility: string },
+  task: { ownerId: string; createdById: string; divisionId: string },
 ): Promise<boolean> {
-  if (task.visibility === 'personal' && task.ownerId === callerId) return true;
+  if (task.createdById === callerId) return true;
   const caller = await prisma.user.findUnique({
     where: { id: callerId },
     select: { isSuperAdmin: true, hierarchySlot: true },
@@ -228,8 +228,8 @@ async function canEditTaskDetails(
 
 /**
  * Whether `callerId` may DELETE `task` as its PMU Team Head. Granted only when:
- *   - the task is a DIVISION-visibility task owned by a member of the caller's
- *     PMU team (so it is one of the team's own board tasks), AND
+ *   - the task is owned by a member of the caller's PMU team (so it is one of
+ *     the team's own board tasks), AND
  *   - the task was NOT allotted (created) by an elevated role — a Division Head,
  *     Super Admin, or OSD — which retains exclusive delete control over the
  *     tasks it hands the team.
@@ -244,9 +244,8 @@ async function canEditTaskDetails(
  */
 async function canPmuHeadDeleteOwnedTask(
   callerId: string,
-  task: { ownerId: string; createdById: string; divisionId: string; visibility: string },
+  task: { ownerId: string; createdById: string; divisionId: string },
 ): Promise<boolean> {
-  if (task.visibility !== 'division') return false;
   const team = await getPmuTeamMemberIds(callerId);
   if (!team.includes(task.ownerId)) return false;
   return !(await isElevatedOverDivision(task.createdById, task.divisionId));
@@ -306,7 +305,6 @@ const createTaskSchema = z.object({
     .transform((s) => (s && s.length > 0 ? s : undefined))
     .refine((s) => !s || !Number.isNaN(Date.parse(s)), 'Due date is invalid'),
   priority: z.enum(PRIORITY).default('low'),
-  visibility: z.enum(VISIBILITY).default('division'),
   divisionId: z.string().uuid().optional(),
   // Optional sub-division within the target division — a Division row of
   // kind 'sub_division' whose parent is the target. Categorisation only; it
@@ -372,7 +370,6 @@ async function createTaskInner(
     description: formData.get('description'),
     dueDate: formData.get('dueDate'),
     priority: formData.get('priority') ?? 'low',
-    visibility: formData.get('visibility') ?? 'division',
     divisionId: formData.get('divisionId') || undefined,
     subDivisionId: formData.get('subDivisionId') || undefined,
     ownerId: formData.get('ownerId') || undefined,
@@ -392,7 +389,7 @@ async function createTaskInner(
 
   const meRow = await prisma.user.findUnique({
     where: { id: me.id },
-    select: { id: true, divisionId: true },
+    select: { id: true, divisionId: true, pmuId: true },
   });
   if (!meRow) return fail('Your account could not be found.', epoch);
 
@@ -400,26 +397,27 @@ async function createTaskInner(
   const actor = await getRbacActor(me.id);
   if (!actor) return fail('Your account could not be found.', epoch);
 
-  // Division-level tasks are given by heads: only Super Admin, OSD, the
-  // target division's head, or an active delegate may create a task with
-  // 'division' visibility. Everyone else creates personal tasks. The same
-  // predicate covers creating in another division — including spawning
-  // from a Timeline File, which always produces a division-level task.
-  const hasDivisionPower = canCreateDivisionTask(actor, targetDivisionId);
-  if (parsed.data.visibility === 'division' && !hasDivisionPower) {
-    return fail('Only the division head can create division-level tasks.', epoch);
+  // Creating a task is no longer a head power — anyone may put work on the
+  // board of a division they belong to, and the whole division reads it.
+  // Beyond their own boards: Super Admin / OSD reach anywhere, a head reaches
+  // the divisions they head AND those divisions' PMUs (the same set Quick
+  // Create offers them), and a PMU member targets their own PMU, which is
+  // where their team actually reads.
+  const hasDivisionPower = canCreateTaskOutsideOwnDivisions(actor, targetDivisionId);
+  let mayTarget = hasDivisionPower || actor.memberDivisionIds.includes(targetDivisionId);
+  if (!mayTarget && meRow.pmuId === targetDivisionId) mayTarget = true;
+  if (!mayTarget && actor.headedDivisionIds.length > 0) {
+    mayTarget = (await getPmuDivisionIdsFor(actor.headedDivisionIds)).includes(
+      targetDivisionId,
+    );
   }
-  // A non-head may only create a (personal) task in a division they are a
-  // MEMBER of — home or an admin-granted extra division (actor.memberDivisionIds
-  // covers both). Creating elsewhere still requires division power.
-  if (!actor.memberDivisionIds.includes(targetDivisionId) && !hasDivisionPower) {
+  if (!mayTarget) {
     return fail('You can only create tasks in a division you belong to.', epoch);
   }
 
-  // By default a new division task starts unassigned: the owner is left as
-  // the creator, which the pull flow (pullTaskAction) treats as "no owner
-  // yet". The task is division-visible, so any member can see it and pull it
-  // to take ownership. Personal tasks are simply owned by their creator.
+  // By default a new task starts unassigned: the owner is left as the
+  // creator, which the pull flow (pullTaskAction) treats as "no owner yet".
+  // Every member of the division sees it and can pull it to take ownership.
   //
   // A head may instead name an initial owner up front (the optional owner
   // picker). It must be an active member of the target division — the same
@@ -433,9 +431,8 @@ async function createTaskInner(
   // the Structure & Hierarchy default: the PMU's team leader (falling back to
   // the creator when unset).
   let ownerId = meRow.id;
-  // A sub-division tag is only meaningful on a division task and must belong
-  // to the target division (a Division row of kind 'sub_division' whose
-  // parent is the target). Personal tasks never carry one.
+  // A sub-division tag must belong to the target division (a Division row of
+  // kind 'sub_division' whose parent is the target).
   let subDivisionId: string | null = null;
   // "Show this task to PMU team", honoured only for a division task whose
   // division has a PMU. No separate permission check: creating a division task
@@ -444,7 +441,7 @@ async function createTaskInner(
   // division task. A PMU target is excluded — sharing a PMU's own task with its
   // team is the team leader's call, made from the task afterwards.
   let sharedWithPmuTeam = false;
-  if (parsed.data.visibility === 'division') {
+  {
     const targetDivision = await prisma.division.findUnique({
       where: { id: targetDivisionId },
       select: { kind: true, name: true },
@@ -526,7 +523,6 @@ async function createTaskInner(
           subDivisionId,
           status: 'not_started',
           priority: parsed.data.priority,
-          visibility: parsed.data.visibility,
           sharedWithPmuTeam,
           dueDate: parsed.data.dueDate ? parseDueDateInput(parsed.data.dueDate) : null,
           linkedTimelineFileId: parsed.data.linkedTimelineFileId ?? null,
@@ -666,7 +662,7 @@ export async function updateTaskStatusAction(
 
   const task = await prisma.task.findUnique({
     where: { id: parsed.data.taskId },
-    select: { id: true, name: true, status: true, ownerId: true, createdById: true, divisionId: true, visibility: true, recurrenceRule: true },
+    select: { id: true, name: true, status: true, ownerId: true, createdById: true, divisionId: true, recurrenceRule: true },
   });
   if (!task) return fail('Task not found.', epoch);
 
@@ -825,7 +821,7 @@ export async function updateTaskPriorityAction(
 }
 
 // ============================================================
-// updateTaskFields — generic editor for description, due date, visibility, recurrence
+// updateTaskFields — generic editor for description, due date, recurrence
 // ============================================================
 
 const updateFieldsSchema = z.object({
@@ -863,7 +859,6 @@ const updateFieldsSchema = z.object({
       (s) => s === undefined || s === null || !Number.isNaN(Date.parse(s)),
       'Due date is invalid',
     ),
-  visibility: z.enum(VISIBILITY).optional(),
   recurrenceRule: z
     .union([
       z.literal(''),
@@ -897,9 +892,6 @@ export async function updateTaskFieldsAction(
     description: formData.has('description') ? (formData.get('description') as string) : undefined,
     latestStatus: formData.has('latestStatus') ? (formData.get('latestStatus') as string) : undefined,
     dueDate: formData.has('dueDate') ? (formData.get('dueDate') as string) : undefined,
-    visibility: formData.has('visibility')
-      ? (formData.get('visibility') as string)
-      : undefined,
     recurrenceRule: formData.has('recurrenceRule')
       ? (formData.get('recurrenceRule') as string)
       : undefined,
@@ -932,7 +924,6 @@ export async function updateTaskFieldsAction(
     const editsBeyondContribute =
       parsed.data.name !== undefined ||
       parsed.data.dueDate !== undefined ||
-      parsed.data.visibility !== undefined ||
       parsed.data.recurrenceRule !== undefined ||
       parsed.data.divisionId !== undefined ||
       parsed.data.subDivisionId !== undefined;
@@ -995,21 +986,6 @@ export async function updateTaskFieldsAction(
         },
       });
     }
-  }
-  if (parsed.data.visibility !== undefined && parsed.data.visibility !== task.visibility) {
-    // Visibility is a head power in both directions — the same rule as
-    // creating a division-level task. Owners/creators who can edit other
-    // fields may neither promote a task onto the division board nor hide
-    // a division task from it.
-    const actor = await getRbacActor(me.id);
-    if (!actor || !canCreateDivisionTask(actor, task.divisionId)) {
-      return fail('Only the division head can change task visibility.', epoch);
-    }
-    data.visibility = parsed.data.visibility;
-    events.push({
-      eventType: 'visibility_changed',
-      payload: { from: task.visibility, to: parsed.data.visibility },
-    });
   }
   if (
     parsed.data.recurrenceRule !== undefined &&
@@ -1264,7 +1240,6 @@ export async function addSubtaskAction(
       parentTaskId: true,
       divisionId: true,
       subDivisionId: true,
-      visibility: true,
       ownerId: true,
       createdById: true,
       dueDate: true,
@@ -1280,9 +1255,8 @@ export async function addSubtaskAction(
     return fail('Subtasks cannot have their own subtasks.', epoch);
   }
 
-  // A subtask inherits the parent's visibility, so adding one to a
-  // division task creates another division-level task. Creating subtasks is
-  // a contribute right: the owner, creator, or a head/OSD/Super Admin of the
+  // Creating subtasks is a contribute right: the owner, creator, or a
+  // head/OSD/Super Admin of the
   // parent's division, plus any explicit collaborator on the task (they are
   // meant to help break the work down). A plain division member who merely
   // *sees* the task still cannot add subtasks. Being @mentioned in the
@@ -1333,7 +1307,6 @@ export async function addSubtaskAction(
           subDivisionId: parent.subDivisionId,
           status: 'not_started',
           priority: 'low',
-          visibility: parent.visibility,
           dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate) : null,
           parentTaskId: parent.id,
           createdById: me.id,
@@ -1400,7 +1373,7 @@ export async function toggleSubtaskAction(
   if (subtask.parentTaskId) {
     const parent = await prisma.task.findUnique({
       where: { id: subtask.parentTaskId },
-      select: { id: true, ownerId: true, createdById: true, divisionId: true, visibility: true },
+      select: { id: true, ownerId: true, createdById: true, divisionId: true },
     });
     if (!parent || !(await canEditTask(me.id, parent))) {
       return fail('You do not have permission to modify this task.', epoch);
@@ -1485,7 +1458,6 @@ export async function updateSubtaskAction(
       ownerId: true,
       createdById: true,
       divisionId: true,
-      visibility: true,
       dueDate: true,
       division: { select: { kind: true, headUserId: true } },
     },
@@ -1870,7 +1842,6 @@ export async function deleteTaskAction(
       createdById: true,
       ownerId: true,
       divisionId: true,
-      visibility: true,
       parentTaskId: true,
     },
   });
@@ -1881,13 +1852,13 @@ export async function deleteTaskAction(
   if (task.parentTaskId) {
     // Subtask deletion is a lifecycle action reserved for the parent task's
     // owner, the head of the task's division, or a Super Admin — never the
-    // subtask's own assignee, who was merely allotted the work. (No personal
+    // subtask's own assignee, who was merely allotted the work. (No
     // self-delete path either: a subtask's owner does not own its lifecycle.)
     // A PMU Team Head may also delete subtasks of their team's OWN division
     // tasks — but not of a task allotted by an elevated role (see below).
     const parent = await prisma.task.findUnique({
       where: { id: task.parentTaskId },
-      select: { ownerId: true, createdById: true, divisionId: true, visibility: true },
+      select: { ownerId: true, createdById: true, divisionId: true },
     });
     allowed =
       (parent !== null && parent.ownerId === me.id) ||
@@ -1911,11 +1882,13 @@ export async function deleteTaskAction(
     }
   } else {
     // Delete rights: a Super Admin (any task) or the head of the task's
-    // division (canActAsHeadOf covers both, plus active delegates), and a
-    // user for their own personal task. A normal user who merely owns a
-    // division task — e.g. after a transfer — can no longer delete it.
+    // division (canActAsHeadOf covers both, plus active delegates), and the
+    // person who created a task that nobody has taken over yet — so a
+    // mistaken entry can be withdrawn by whoever made it. A normal user who
+    // merely owns a task — e.g. after a transfer — cannot delete it, and
+    // neither can a creator once it has been handed on.
     allowed =
-      (task.visibility === 'personal' && task.ownerId === me.id) ||
+      (task.createdById === me.id && task.ownerId === me.id) ||
       (actor !== null && canActAsHeadOf(actor, task.divisionId));
     // A PMU Team Head may delete their PMU team's OWN division tasks — but
     // never a task allotted (created) by a Division Head / Super Admin / OSD,
@@ -2216,7 +2189,6 @@ export async function addCollaboratorAction(
       ownerId: true,
       createdById: true,
       divisionId: true,
-      visibility: true,
       archivedAt: true,
       dueDate: true,
       division: { select: { kind: true, headUserId: true } },
@@ -2334,7 +2306,7 @@ export async function removeCollaboratorAction(
 
   const task = await prisma.task.findUnique({
     where: { id: parsed.data.taskId },
-    select: { id: true, ownerId: true, createdById: true, divisionId: true, visibility: true },
+    select: { id: true, ownerId: true, createdById: true, divisionId: true },
   });
   if (!task) return fail('Task not found.', epoch);
 
@@ -2567,7 +2539,7 @@ export async function reassignTaskAction(
 
   const task = await prisma.task.findUnique({
     where: { id: parsed.data.taskId },
-    select: { id: true, name: true, ownerId: true, createdById: true, divisionId: true, dueDate: true, visibility: true },
+    select: { id: true, name: true, ownerId: true, createdById: true, divisionId: true, dueDate: true },
   });
   if (!task) return fail('Task not found.', epoch);
   if (task.ownerId === parsed.data.newOwnerId) return fail('Already the owner.', epoch);
@@ -2591,13 +2563,11 @@ export async function reassignTaskAction(
   ]);
   if (!actor || !targetRbac) return fail('User not found.', epoch);
 
-  // A PMU team leader may reassign a DIVISION task OWNED BY one of their team
+  // A PMU team leader may reassign a task OWNED BY one of their team
   // members — and freely, without approval, when the new owner is also on the
   // team. The scope stays inside the PMU team; a non-team target still falls to
-  // the transfer matrix below. Personal tasks are out of scope, matching the
-  // read + manage gates.
-  const pmuLeaderManagesTask =
-    task.visibility === 'division' && pmuTeamMemberIds.includes(task.ownerId);
+  // the transfer matrix below.
+  const pmuLeaderManagesTask = pmuTeamMemberIds.includes(task.ownerId);
 
   // Initiation guard: reassigning the owner from the Owner row is a head
   // power — Super Admin, OSD, or the head of the task's division only — plus a
@@ -2879,7 +2849,7 @@ export async function transferTaskAction(
 
   const task = await prisma.task.findUnique({
     where: { id: parsed.data.taskId },
-    select: { id: true, name: true, ownerId: true, createdById: true, divisionId: true, visibility: true, dueDate: true, parentTaskId: true },
+    select: { id: true, name: true, ownerId: true, createdById: true, divisionId: true, dueDate: true, parentTaskId: true },
   });
   if (!task) return fail('Task not found.', epoch);
 
@@ -2912,16 +2882,6 @@ export async function transferTaskAction(
     ownerId: target.id,
     lastActivityAt: new Date(),
   };
-  // A top-level personal task auto-promotes to division on transfer so it
-  // does not vanish from the recipient's view (§5.6). Subtasks are exempt:
-  // a subtask inherits its parent's visibility and must never become more
-  // permissive than the parent (§5.1), so its visibility is left untouched.
-  if (task.visibility === 'personal' && !task.parentTaskId) {
-    if (canCreateDivisionTask(actor, task.divisionId)) {
-      updates.visibility = 'division';
-    }
-  }
-
   try {
     await prisma.$transaction([
       prisma.task.update({ where: { id: task.id }, data: updates }),
@@ -3020,13 +2980,12 @@ export async function pullTaskAction(
 
   const task = await prisma.task.findUnique({
     where: { id: parsed.data.taskId },
-    select: { id: true, name: true, ownerId: true, createdById: true, divisionId: true, visibility: true, parentTaskId: true },
+    select: { id: true, name: true, ownerId: true, createdById: true, divisionId: true, parentTaskId: true },
   });
   if (!task) return fail('Task not found.', epoch);
 
   if (task.ownerId !== task.createdById) return fail('This task is already assigned.', epoch);
   if (task.ownerId === me.id) return fail('You already own this task.', epoch);
-  if (task.visibility === 'personal') return fail('Personal tasks cannot be pulled.', epoch);
   if (task.parentTaskId) return fail('Subtasks cannot be pulled.', epoch);
 
   const meRow = await prisma.user.findUnique({

@@ -57,14 +57,12 @@ type SectionDetailsProps = {
   due: Date | null;
   divisionId: string;
   divisionName: string;
-  visibility: 'division' | 'personal';
   recurrence: string | null;
   reassignCandidates: ReassignCandidate[];
   pendingReassignment: PendingReassignment | null;
   canReassign: boolean;
   canEditFields: boolean;
   /** Visibility is a head power — stricter than canEditFields. */
-  canEditVisibility: boolean;
   canChangeDivision: boolean;
   divisions: DivisionOption[];
   /** Current sub-division id, or null when the task is tagged to none. */
@@ -76,11 +74,6 @@ type SectionDetailsProps = {
   canChangeSubDivision: boolean;
   canViewProfiles: boolean;
 };
-
-const VISIBILITY_OPTIONS = [
-  { value: 'division', label: 'Division', icon: 'ti-users', hint: 'Visible to your chain and division' },
-  { value: 'personal', label: 'Personal', icon: 'ti-lock', hint: 'Visible to the owner, creator, and added collaborators only' },
-] as const;
 
 export function SectionDetails(props: SectionDetailsProps) {
   return (
@@ -125,9 +118,6 @@ export function SectionDetails(props: SectionDetailsProps) {
             subDivisions={props.subDivisions}
           />
         ) : null}
-
-        <VisibilityRow taskId={props.taskId} visibility={props.visibility} canEdit={props.canEditVisibility} />
-
 
         <RecurrenceRow taskId={props.taskId} recurrence={props.recurrence} canEdit={props.canEditFields} />
       </div>
@@ -797,118 +787,6 @@ function SubDivisionRow({
     </>
   );
 }
-
-// ------------------------------------------------------------
-// Visibility row — sheet with two options
-// ------------------------------------------------------------
-
-function VisibilityRow({
-  taskId,
-  visibility,
-  canEdit,
-}: {
-  taskId: string;
-  visibility: 'division' | 'personal';
-  canEdit: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const [chosen, setChosen] = useState(visibility);
-  const [state, formAction] = useFormState<UpdateFieldsState, FormData>(
-    updateTaskFieldsAction,
-    INITIAL_FIELDS_STATE,
-  );
-  const current = VISIBILITY_OPTIONS.find((v) => v.value === visibility)!;
-
-  useEffect(() => {
-    if (state.ok) setOpen(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.ok, state.epoch]);
-
-  useEffect(() => {
-    if (open) setChosen(visibility);
-  }, [open, visibility]);
-
-  if (!canEdit) {
-    return (
-      <Row icon="ti-users" label="Visibility">
-        <span className="inline-flex items-center gap-1.5">
-          <i className={cn('ti', current.icon, 'text-[13px]')} aria-hidden="true" />
-          {current.label}
-        </span>
-      </Row>
-    );
-  }
-
-  return (
-    <>
-      <Row icon="ti-users" label="Visibility" onClick={() => setOpen(true)}>
-        <span className="inline-flex items-center gap-1.5">
-          <i className={cn('ti', current.icon, 'text-[13px]')} aria-hidden="true" />
-          {current.label}
-        </span>
-      </Row>
-
-      <Sheet open={open} onClose={() => setOpen(false)} title="Who can see this task?">
-        <form action={formAction} className="flex flex-col gap-3">
-          <input type="hidden" name="taskId" value={taskId} />
-          <input type="hidden" name="visibility" value={chosen} />
-
-          <div className="flex flex-col gap-1" role="radiogroup">
-            {VISIBILITY_OPTIONS.map((v) => {
-              const active = chosen === v.value;
-              return (
-                <button
-                  key={v.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  onClick={() => setChosen(v.value)}
-                  className={cn(
-                    'flex items-start gap-3 px-3 py-3 rounded-lg text-left transition-colors',
-                    active ? 'bg-primary-soft' : 'hover:bg-bg',
-                  )}
-                >
-                  <i
-                    className={cn(
-                      'ti',
-                      v.icon,
-                      'text-[18px] mt-0.5',
-                      active ? 'text-primary' : 'text-ink-2',
-                    )}
-                    aria-hidden="true"
-                  />
-                  <div className="flex-1">
-                    <div className="text-[14px] font-medium text-ink">{v.label}</div>
-                    <div className="text-[12px] text-ink-3 mt-0.5">{v.hint}</div>
-                  </div>
-                  {active ? (
-                    <span className="w-5 h-5 grid place-items-center rounded-full bg-ink text-onink shrink-0">
-                      <i className="ti ti-check text-[12px]" aria-hidden="true" />
-                    </span>
-                  ) : null}
-                </button>
-              );
-            })}
-          </div>
-
-          {state.error ? <p className="text-[12px] text-urgent">{state.error}</p> : null}
-
-          <div className="flex gap-2 mt-1">
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="flex-1 py-3 rounded-lg border border-line text-[14px] font-medium text-ink-2 hover:bg-line-2"
-            >
-              Cancel
-            </button>
-            <SaveBtn />
-          </div>
-        </form>
-      </Sheet>
-    </>
-  );
-}
-
 
 function SaveBtn() {
   const { pending } = useFormStatus();

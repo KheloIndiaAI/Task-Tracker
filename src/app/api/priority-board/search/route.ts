@@ -13,9 +13,7 @@ import { buildVisibilityClauses } from '@/lib/visibility';
  * Super Admin — the same gate as setJsPriorityLaneAction): the tray exists
  * to drag tasks onto the board, which only they may do.
  *
- * Only division-visibility, open, top-level tasks are returned — a personal
- * task never belongs on the JS board (the JS badge propagates to people who
- * cannot see it). Results are additionally visibility-scoped for safety.
+ * Only open, top-level tasks are returned, visibility-scoped to the caller.
  */
 export async function GET(request: Request) {
   const session = await auth();
@@ -54,7 +52,6 @@ export async function GET(request: Request) {
     where: {
       archivedAt: null,
       parentTaskId: null,
-      visibility: 'division',
       status: { not: 'completed' },
       AND: [
         { OR: visibilityClauses },

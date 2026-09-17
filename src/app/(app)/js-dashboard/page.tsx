@@ -16,9 +16,9 @@ import type { PillJsLane, PillStatusTone } from '@/components/ui/Pill';
  * JS Dashboard — per PRD §5.5.
  *
  * Read-only dashboard for the Joint Secretary. Combines:
- *   - Personal task counters (mine, priority board, due today)
+ *   - Own-work counters (mine, priority board, due today)
  *   - JS Priority lanes as compact tap-to-view panels (no drag-and-drop)
- *   - Personal task list (owned by JS, not completed)
+ *   - Own task list (owned by JS, not completed)
  *
  * Access: hierarchySlot === 'js' | isSuperAdmin | hierarchySlot === 'osd'.
  * Everyone else is redirected to /tasks.
@@ -50,11 +50,6 @@ export default async function JsDashboardPage() {
 
   const userId = session.user.id;
   const baseFilter = { archivedAt: null, parentTaskId: null };
-  // Ministry-wide aggregates (priority board) stay division-only
-  // so another user's Personal task never leaks into a count or list. The
-  // viewer's own-task widgets keep using baseFilter — they are already
-  // scoped to this user, who owns those personal tasks.
-  const divisionFilter = { ...baseFilter, visibility: 'division' as const };
 
   const [
     myTasksCount,
@@ -74,7 +69,7 @@ export default async function JsDashboardPage() {
     }),
     // Total JS Priority board tasks
     prisma.task.count({
-      where: { ...divisionFilter, jsPriorityLane: { not: null } },
+      where: { ...baseFilter, jsPriorityLane: { not: null } },
     }),
     // Tasks due today, owned by or assigned to the JS user
     prisma.task.count({
@@ -90,14 +85,14 @@ export default async function JsDashboardPage() {
     }),
     // All priority board tasks (grouped by lane below)
     prisma.task.findMany({
-      where: { ...divisionFilter, jsPriorityLane: { not: null } },
+      where: { ...baseFilter, jsPriorityLane: { not: null } },
       include: {
         owner: { select: USER_SUMMARY_SELECT },
         division: true,
       },
       orderBy: [{ priority: 'desc' }, { dueDate: { sort: 'asc', nulls: 'last' } }],
     }),
-    // Personal tasks owned by JS, not completed (up to 8)
+    // Tasks owned by JS, not completed (up to 8)
     prisma.task.findMany({
       where: {
         ...baseFilter,
@@ -151,7 +146,7 @@ export default async function JsDashboardPage() {
 
       {/* Stats strip */}
       <section
-        aria-label="Personal task counters"
+        aria-label="Task counters"
         className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6"
       >
         <Stat

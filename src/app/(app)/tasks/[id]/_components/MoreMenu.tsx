@@ -14,7 +14,7 @@ type MoreMenuProps = {
 
 /**
  * Detail-screen more-menu dropdown.
- *   - Delete (division head / Super Admin, or own personal task)
+ *   - Delete (division head / Super Admin, or a task you created and still own)
  *
  * Delete hard-removes the task and its children, then bounces to /tasks.
  */
