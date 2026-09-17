@@ -7,6 +7,7 @@ import {
   canDelegateDivision,
   canEditDivisionNotice,
   canManageTask,
+  canSetJsPriorityLane,
   canTransferTaskTo,
   isEligibleDelegate,
   roleOf,
@@ -426,6 +427,47 @@ describe('canManageTask — PMU team leader', () => {
     expect(
       canManageTask(leader(), { ownerId: 'leader-1', createdById: 'x', divisionId: MEDIA, visibility: 'personal' }),
     ).toBe(true);
+  });
+});
+
+describe('canSetJsPriorityLane — the Daily/Weekly/FortNight/Monthly/Watchlist pills', () => {
+  const PMU = 'div-nsdf-pmu';
+  const caller = (overrides: Record<string, unknown> = {}) => ({
+    isSuperAdmin: false,
+    hierarchySlot: 'under_secretary',
+    memberDivisionIds: [KI],
+    headedDivisionIds: [] as string[],
+    ...overrides,
+  });
+
+  it('lets leadership curate a division they are not even a member of', () => {
+    const away = { divisionId: NSDF };
+    expect(canSetJsPriorityLane(caller({ isSuperAdmin: true, memberDivisionIds: [OJS] }), away)).toBe(true);
+    expect(canSetJsPriorityLane(caller({ hierarchySlot: 'osd', memberDivisionIds: [OJS] }), away)).toBe(true);
+  });
+
+  it('scopes a Director to their own member divisions', () => {
+    const director = caller({ hierarchySlot: 'director' });
+    expect(canSetJsPriorityLane(director, { divisionId: KI })).toBe(true);
+    expect(canSetJsPriorityLane(director, { divisionId: NSDF })).toBe(false);
+  });
+
+  it('lets a head — or an active delegate, same set — curate what they head', () => {
+    expect(canSetJsPriorityLane(caller({ headedDivisionIds: [NSDF] }), { divisionId: NSDF })).toBe(true);
+  });
+
+  it('gives a PMU member no pills anywhere', () => {
+    // Why the tasks list renders a PMU's segment lane board read-only: a PMU
+    // member is neither leadership, a Director, nor a head, so every division
+    // they can see fails this. A PMU team leader is no different — team scope
+    // buys task management (canManageTask above), never curation.
+    const pmuMember = caller({ hierarchySlot: 'consultant', memberDivisionIds: [PMU] });
+    expect(canSetJsPriorityLane(pmuMember, { divisionId: PMU })).toBe(false);
+    expect(canSetJsPriorityLane(pmuMember, { divisionId: NSDF })).toBe(false);
+  });
+
+  it('gives a plain officer none, even in their own division', () => {
+    expect(canSetJsPriorityLane(caller(), { divisionId: KI })).toBe(false);
   });
 });
 

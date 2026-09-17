@@ -18,7 +18,8 @@ import { canAccessReportGeneration } from '@/lib/reports-shared';
 import { fetchTaskCounts, fetchVisibleTasks, getPmuParentDivisionHeadId, type TaskFilter, type TaskSort } from '@/lib/visibility';
 
 import { DivisionControls } from './_components/DivisionControls';
-import { type LaneBoardTask } from './_components/DivisionLaneBoard';
+import { DivisionCardsToggle } from './_components/DivisionCardsToggle';
+import { DivisionLaneBoard, type LaneBoardTask } from './_components/DivisionLaneBoard';
 import { DivisionNoticeBoard } from './_components/DivisionNoticeBoard';
 import { DivisionSubFilter } from './_components/DivisionSubFilter';
 import { ReportGenerationDialog } from './_components/ReportGenerationDialog';
@@ -226,18 +227,30 @@ export default async function TasksPage({ searchParams }: PageProps) {
     ? null
     : segmentTasksByRelation(tasks, me.id, me.isPmu, me.pmuId, isExcludedPmuHead);
 
+  // A PMU member stays on the flat three-segment list — a PMU is one team, not
+  // a set of divisions to group — so the Daily / Weekly / FortNight / Monthly /
+  // Watchlist board had nowhere to appear for them. Render it inside each
+  // segment instead ("Other tasks of my PMU team" and its two siblings), so a
+  // PMU reads its work bucketed exactly as a division does on the grouped view.
+  // Scoped to PMU members deliberately: every other flat-list user is an
+  // individual officer whose segments are their own worklist, not a team board.
+  const showSegmentLaneBoards = !groupByDivision && me.isPmu;
+
   // Who may edit Latest status from the board's Status row — the same
   // contribute right the task detail page uses (owner/creator via
   // canManageTask, or an explicit collaborator/mention via
-  // getContributorTaskIds). Computed once, batched across every task in
-  // every division shown here, rather than per task: two queries total
-  // instead of 2×N.
-  const contributorTaskIds = grouped
-    ? await getContributorTaskIds(
-        me.id,
-        grouped.flatMap((g) => g.tasks.map((t) => t.id)),
-      )
-    : new Set<string>();
+  // getContributorTaskIds). Computed once, batched across every task on
+  // whichever board is rendered, rather than per task: two queries total
+  // instead of 2×N. No board, no query.
+  const laneBoardTaskIds = grouped
+    ? grouped.flatMap((g) => g.tasks.map((t) => t.id))
+    : showSegmentLaneBoards
+      ? tasks.map((t) => t.id)
+      : [];
+  const contributorTaskIds =
+    laneBoardTaskIds.length > 0
+      ? await getContributorTaskIds(me.id, laneBoardTaskIds)
+      : new Set<string>();
 
   // Stable identity of this exact list view — used to scope the preserved scroll
   // position and quick-search query so Back restores them only for the same
@@ -354,38 +367,69 @@ export default async function TasksPage({ searchParams }: PageProps) {
             // Always render all three segments — even empty ones — so the
             // three-part structure is visible on every login.
             <div className="space-y-6">
-              {segments!.map((segment) => (
-                <section key={segment.key} aria-label={segment.label}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <i
-                      className={`ti ${segment.icon} text-[14px] text-ink-3`}
-                      aria-hidden="true"
-                    />
-                    <h3 className="section-label">
-                      {segment.label}
-                    </h3>
-                    <span className="text-[11px] text-ink-3">
-                      {segment.tasks.length}
-                    </span>
-                    {segment.subtitle ? (
-                      <span className="text-[11px] text-ink-3 normal-case tracking-normal font-normal">
-                        · {segment.subtitle}
+              {segments!.map((segment) => {
+                // Built once and placed either on its own (the long-standing
+                // layout) or behind the lane board's Show-task-cards toggle,
+                // so the two paths can never drift apart.
+                const cards = (
+                  <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 md:gap-3">
+                    {segment.tasks.map((t) => (
+                      <TaskRow key={t.id} task={t} caller={permCaller} canSetFortnight={canSetFortnight} />
+                    ))}
+                  </ul>
+                );
+                return (
+                  <section key={segment.key} aria-label={segment.label}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <i
+                        className={`ti ${segment.icon} text-[14px] text-ink-3`}
+                        aria-hidden="true"
+                      />
+                      <h3 className="section-label">
+                        {segment.label}
+                      </h3>
+                      <span className="text-[11px] text-ink-3">
+                        {segment.tasks.length}
                       </span>
-                    ) : null}
-                  </div>
-                  {segment.tasks.length === 0 ? (
-                    <p className="rounded-lg border border-dashed border-line bg-panel px-3 py-3 text-[12px] text-ink-3">
-                      {segment.emptyLabel}
-                    </p>
-                  ) : (
-                    <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 md:gap-3">
-                      {segment.tasks.map((t) => (
-                        <TaskRow key={t.id} task={t} caller={permCaller} canSetFortnight={canSetFortnight} />
-                      ))}
-                    </ul>
-                  )}
-                </section>
-              ))}
+                      {segment.subtitle ? (
+                        <span className="text-[11px] text-ink-3 normal-case tracking-normal font-normal">
+                          · {segment.subtitle}
+                        </span>
+                      ) : null}
+                    </div>
+                    {segment.tasks.length === 0 ? (
+                      <p className="rounded-lg border border-dashed border-line bg-panel px-3 py-3 text-[12px] text-ink-3">
+                        {segment.emptyLabel}
+                      </p>
+                    ) : showSegmentLaneBoards ? (
+                      <>
+                        <DivisionLaneBoard
+                          tasks={toLaneBoardTasks(segment.tasks, permCaller, contributorTaskIds)}
+                          // One flag for the whole board, but a segment can hold
+                          // tasks from more than one division (a PMU's own work
+                          // plus anything shared with the team), so the pills go
+                          // live only when the caller may curate every division
+                          // present. Fail-closed: never offer a pill the server
+                          // would refuse. A PMU member curates nothing, so this
+                          // is false for them today.
+                          canCurate={segment.tasks.every((t) =>
+                            canSetJsPriorityLane(permCaller, { divisionId: t.divisionId }),
+                          )}
+                          canEditJsComment={canEditJsComment}
+                        />
+                        {/* Completed work never reaches the flat list — the
+                            "all" filter excludes it and only the grouped view
+                            queries for it — hence completedCount={0}. */}
+                        <DivisionCardsToggle count={segment.tasks.length} completedCount={0}>
+                          {cards}
+                        </DivisionCardsToggle>
+                      </>
+                    ) : (
+                      cards
+                    )}
+                  </section>
+                );
+              })}
             </div>
           )}
         </TasksQuickSearch>
