@@ -9,17 +9,12 @@ import { formatDue, initialsOf } from '@/lib/format';
 import { canEditDivisionNotice, canManageTask, canSetJsPriorityLane, getHeadedDivisionIds } from '@/lib/rbac';
 import { getPmuTeamMemberIds } from '@/lib/pmu-team';
 import { getContributorTaskIds } from '@/lib/task-participants';
-import {
-  canGroupTasksByDivision,
-  opensTasksGrouped,
-  resolveGroupByDivision,
-} from '@/lib/task-grouping-shared';
+import { resolveGroupByDivision } from '@/lib/task-grouping-shared';
 import { canAccessReportGeneration } from '@/lib/reports-shared';
 import { fetchTaskCounts, fetchVisibleTasks, getPmuParentDivisionHeadId, type TaskFilter, type TaskSort } from '@/lib/visibility';
 
 import { DivisionControls } from './_components/DivisionControls';
-import { DivisionCardsToggle } from './_components/DivisionCardsToggle';
-import { DivisionLaneBoard, type LaneBoardTask } from './_components/DivisionLaneBoard';
+import { type LaneBoardTask } from './_components/DivisionLaneBoard';
 import { DivisionNoticeBoard } from './_components/DivisionNoticeBoard';
 import { DivisionSubFilter } from './_components/DivisionSubFilter';
 import { ReportGenerationDialog } from './_components/ReportGenerationDialog';
@@ -63,9 +58,9 @@ export default async function TasksPage({ searchParams }: PageProps) {
     : 'latest';
 
   // Head/delegate divisions are fetched alongside `me` rather than with the
-  // main query batch below, because the grouped-view gate depends on them and
-  // that gate in turn decides whether the batch runs its completed-tasks query.
-  // Both only need the session id, so this costs no extra round trip.
+  // main query batch below — they gate the Notice board, the report button and
+  // the per-card management rights, all needed before the batch's results are
+  // shaped. Both only need the session id, so this costs no extra round trip.
   const [me, headedDivisionIds] = await Promise.all([
     prisma.user.findUnique({
       where: { id: session.user.id },
@@ -86,22 +81,15 @@ export default async function TasksPage({ searchParams }: PageProps) {
   if (!me) redirect('/login');
 
   // Member divisions (home + admin-granted extras) — drives the per-card
-  // management gate and whether Group-by-division is offered.
+  // management gate.
   const memberDivisionIds = [me.divisionId, ...me.divisionAccess.map((a) => a.divisionId)];
 
-  // Who may see the grouped division board, and who lands on it — both pure
-  // rules, see task-grouping-shared.ts. Division heads are in both sets: the
-  // Notice board, sub-division pills and lane board they already have rights
-  // over live only inside a division card. An explicit ?group= still wins.
-  const groupingActor = {
-    isSuperAdmin: me.isSuperAdmin,
-    hierarchySlot: me.hierarchySlot,
-    headedDivisionIds,
-    memberDivisionIds,
-  };
-  const canGroupByDivision = canGroupTasksByDivision(groupingActor);
-  const groupByDivision =
-    canGroupByDivision && resolveGroupByDivision(groupParam, opensTasksGrouped(groupingActor));
+  // Everyone lands on the division board. It is the only task-list design now
+  // — the Notice board, sub-division pills and lane board are each already
+  // permissioned per user, so a reader who may change none of them still gets
+  // a far better read of their division's work than a wall of cards. See
+  // task-grouping-shared.ts; `?group=none` is the explicit opt-out.
+  const groupByDivision = resolveGroupByDivision(groupParam, true);
 
   const [
     taskResult,
@@ -227,26 +215,15 @@ export default async function TasksPage({ searchParams }: PageProps) {
     ? null
     : segmentTasksByRelation(tasks, me.id, me.isPmu, me.pmuId, isExcludedPmuHead);
 
-  // A PMU member stays on the flat three-segment list — a PMU is one team, not
-  // a set of divisions to group — so the Daily / Weekly / FortNight / Monthly /
-  // Watchlist board had nowhere to appear for them. Render it inside each
-  // segment instead ("Other tasks of my PMU team" and its two siblings), so a
-  // PMU reads its work bucketed exactly as a division does on the grouped view.
-  // Scoped to PMU members deliberately: every other flat-list user is an
-  // individual officer whose segments are their own worklist, not a team board.
-  const showSegmentLaneBoards = !groupByDivision && me.isPmu;
-
   // Who may edit Latest status from the board's Status row — the same
   // contribute right the task detail page uses (owner/creator via
   // canManageTask, or an explicit collaborator/mention via
-  // getContributorTaskIds). Computed once, batched across every task on
-  // whichever board is rendered, rather than per task: two queries total
-  // instead of 2×N. No board, no query.
+  // getContributorTaskIds). Computed once, batched across every task on the
+  // board rather than per task: two queries total instead of 2×N. The flat
+  // opt-out view has no lane board, so it needs no query.
   const laneBoardTaskIds = grouped
     ? grouped.flatMap((g) => g.tasks.map((t) => t.id))
-    : showSegmentLaneBoards
-      ? tasks.map((t) => t.id)
-      : [];
+    : [];
   const contributorTaskIds =
     laneBoardTaskIds.length > 0
       ? await getContributorTaskIds(me.id, laneBoardTaskIds)
@@ -401,29 +378,6 @@ export default async function TasksPage({ searchParams }: PageProps) {
                       <p className="rounded-lg border border-dashed border-line bg-panel px-3 py-3 text-[12px] text-ink-3">
                         {segment.emptyLabel}
                       </p>
-                    ) : showSegmentLaneBoards ? (
-                      <>
-                        <DivisionLaneBoard
-                          tasks={toLaneBoardTasks(segment.tasks, permCaller, contributorTaskIds)}
-                          // One flag for the whole board, but a segment can hold
-                          // tasks from more than one division (a PMU's own work
-                          // plus anything shared with the team), so the pills go
-                          // live only when the caller may curate every division
-                          // present. Fail-closed: never offer a pill the server
-                          // would refuse. A PMU member curates nothing, so this
-                          // is false for them today.
-                          canCurate={segment.tasks.every((t) =>
-                            canSetJsPriorityLane(permCaller, { divisionId: t.divisionId }),
-                          )}
-                          canEditJsComment={canEditJsComment}
-                        />
-                        {/* Completed work never reaches the flat list — the
-                            "all" filter excludes it and only the grouped view
-                            queries for it — hence completedCount={0}. */}
-                        <DivisionCardsToggle count={segment.tasks.length} completedCount={0}>
-                          {cards}
-                        </DivisionCardsToggle>
-                      </>
                     ) : (
                       cards
                     )}
