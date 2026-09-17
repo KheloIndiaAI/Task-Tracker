@@ -466,10 +466,15 @@ model Task {
   jsPriorityLane JsPriorityLane? @map("js_priority_lane")
   visibility     Visibility      @default(division)
 
-  // Set by a PMU team leader on a PMU task to share it with the whole PMU
-  // team (every member except the PMU's home-division head). Read-time
-  // membership — see buildVisibilityClausesFrom. Only meaningful when the
-  // task's division is a PMU.
+  // "Show this task to PMU team" — one flag, two directions, told apart by
+  // whether the task's division IS a PMU:
+  //   - PMU task: set by that PMU's team leader, shares it with the whole team
+  //     (every member except the PMU's home-division head).
+  //   - Division task: set by the division's head, shows it down to the PMU
+  //     team(s) under that division, who are otherwise walled off from the
+  //     division's board by PMU isolation.
+  // Read-time membership either way — see buildVisibilityClausesFrom. Cleared
+  // automatically when a task moves to a different division.
   sharedWithPmuTeam Boolean @default(false) @map("shared_with_pmu_team")
 
   dueDate        DateTime?       @map("due_date") @db.Timestamptz(6)

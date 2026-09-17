@@ -10,6 +10,7 @@ import { canAccessDocumentCentre as canAccessDocumentCentreShared } from '@/lib/
 import { canAccessBusinessCards as canAccessBusinessCardsShared } from '@/lib/business-cards-shared';
 import { canAccessTimelineFiles } from '@/lib/timeline-files-access';
 import { getHeadedDivisionIds } from '@/lib/rbac';
+import { getPmusByParentDivision } from '@/lib/visibility';
 import { isS3Configured } from '@/lib/s3';
 
 import {
@@ -149,6 +150,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // surfaced as a one-click pill in Quick Create. Derived from the pool above,
   // so no extra query; absent (null) when that person is inactive or unset.
   const candidateById = new Map(candidatesRaw.map((u) => [u.id, u]));
+  // PMUs hanging off each division target — the "Show this task to PMU team"
+  // switch in Quick Create appears only for a division that has one. Resolved
+  // by the shared helper so `pmu_parent_division_id` and the `parent_id`
+  // fallback are honoured the same way everywhere else honours them.
+  const pmusByDivision = await getPmusByParentDivision(divisionTargetIds);
+
   const pmuLeadByPmu = new Map(
     candidatesRaw
       .filter((u) => u.pmuRole === 'pmu_team_leader' && u.pmuId)
@@ -169,6 +176,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       autoOwnerId: auto?.id ?? null,
       autoOwnerName: auto?.name ?? null,
       subDivisions: t.children.map((c) => ({ id: c.id, name: c.name })),
+      // Empty for a PMU target and for any division with no PMU under it —
+      // which is exactly when the share switch must not be offered.
+      pmuNames: (pmusByDivision.get(t.id) ?? []).map((p) => p.name),
     };
   });
 

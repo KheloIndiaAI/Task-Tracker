@@ -208,6 +208,65 @@ export function canSetJsPriorityLane(
 }
 
 /**
+ * Who may flip a task's "Show this task to PMU team" switch
+ * (`tasks.shared_with_pmu_team`) — one field covering two directions:
+ *
+ *   - On a PMU's OWN task (divisionKind 'pmu'), it shares the task with that
+ *     whole PMU team. Set by the PMU team leader who owns it.
+ *   - On a DIVISION task, it shows the task down to the PMU team(s) attached
+ *     to that division, which PMU isolation otherwise hides from them. Set by
+ *     the division's head or an active delegate, because widening who can see
+ *     a division's board is a head power — the same reasoning behind
+ *     `canCreateDivisionTask` gating visibility changes.
+ *
+ * OSD and Super Admin manage it wherever it means something.
+ *
+ * `divisionHasPmu` is the "else do not show this" guard: a division with no
+ * PMU under it has no audience to share with, so the switch never appears —
+ * and this rule refuses it even if a request arrives anyway.
+ *
+ * Pure so the detail page, Quick Create and the server action share one rule.
+ */
+export function canSharePmuTeam(
+  caller: {
+    id: string;
+    isSuperAdmin: boolean;
+    hierarchySlot: string;
+    headedDivisionIds: string[];
+    /** The caller's own PMU, when they are a PMU member. */
+    pmuId: string | null;
+    pmuRole: string | null;
+  },
+  task: {
+    ownerId: string;
+    divisionId: string;
+    /** Division.kind of the task's division — 'pmu' or otherwise. */
+    divisionKind: string;
+    /** Whether the task's division has at least one PMU hanging off it. */
+    divisionHasPmu: boolean;
+  },
+): boolean {
+  // Nothing to share with: not a PMU's own task, and no PMU under the division.
+  if (task.divisionKind !== 'pmu' && !task.divisionHasPmu) return false;
+
+  if (caller.isSuperAdmin || caller.hierarchySlot === 'osd') return true;
+
+  if (task.divisionKind === 'pmu') {
+    // Unchanged from the original rule: the PMU team leader who owns it.
+    return (
+      task.ownerId === caller.id &&
+      caller.pmuRole === 'pmu_team_leader' &&
+      caller.pmuId === task.divisionId
+    );
+  }
+
+  // A division task: head or active delegate of that division only. Ownership
+  // is deliberately NOT enough — an owner who is not a head may not widen the
+  // task's audience.
+  return caller.headedDivisionIds.includes(task.divisionId);
+}
+
+/**
  * Who may MANAGE a task — edit its status / priority / description / subtasks
  * and add or remove its collaborators. The rule is the single source of truth
  * behind the server `canEditTask` guard (see src/app/actions/tasks.ts) and the

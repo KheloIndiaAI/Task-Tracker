@@ -27,6 +27,13 @@ export type VisibilityOptions = {
    */
   isPmuParentDivisionHead?: boolean;
   /**
+   * For a PMU caller: the division their PMU hangs off (`getPmuParentDivision`).
+   * Scopes the "shown down to the PMU team" clause below — a division task
+   * carrying `shared_with_pmu_team` is visible to the PMUs of THAT division
+   * only, never to a PMU under some other division.
+   */
+  pmuParentDivisionId?: string | null;
+  /**
    * Divisions the caller is a MEMBER of: their home division plus any
    * admin-granted extra divisions (user_division_access). Grants FULL board
    * visibility of each division's non-personal tasks. The home division is
@@ -182,6 +189,19 @@ export function buildVisibilityClausesFrom(
         visibility: 'division',
         sharedWithPmuTeam: true,
         divisionId: me.pmuId,
+      });
+    }
+    // The other direction of the same switch: a task on the PARENT division's
+    // own board, which the head opted to show to the division's PMU team(s).
+    // This is the one deliberate hole in PMU isolation — without the flag a
+    // PMU member never sees an internal ministry task, and the flag is a head
+    // power (canSharePmuTeam), so the hole is opened per task by the person
+    // who owns that board. Everything else about isolation is unchanged.
+    if (opts.pmuParentDivisionId) {
+      clauses.push({
+        visibility: 'division',
+        sharedWithPmuTeam: true,
+        divisionId: opts.pmuParentDivisionId,
       });
     }
     if (divisionIds.size > 0) {

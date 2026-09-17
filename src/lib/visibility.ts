@@ -125,7 +125,18 @@ export async function getPmuDivisionIdsFor(divisionIds: string[]): Promise<strin
   return pmus.map((p) => p.id);
 }
 
-export async function getPmuParentDivisionHeadId(pmuId: string): Promise<string | null> {
+/**
+ * The division a PMU hangs off, with its head — `pmu_parent_division_id`
+ * falling back to `parent_id`, the same resolution `getPmuDivisionIdsFor`
+ * applies in the other direction.
+ *
+ * Returns both because every caller that wants one is about to want the other:
+ * the head decides whether a whole-team share is surfaced to them, and the id
+ * scopes which division's shared tasks reach this PMU.
+ */
+export async function getPmuParentDivision(
+  pmuId: string,
+): Promise<{ id: string; headUserId: string | null } | null> {
   const pmu = await prisma.division.findUnique({
     where: { id: pmuId },
     select: { pmuParentDivisionId: true, parentId: true },
@@ -136,7 +147,44 @@ export async function getPmuParentDivisionHeadId(pmuId: string): Promise<string 
     where: { id: parentId },
     select: { headUserId: true },
   });
-  return parent?.headUserId ?? null;
+  return { id: parentId, headUserId: parent?.headUserId ?? null };
+}
+
+export async function getPmuParentDivisionHeadId(pmuId: string): Promise<string | null> {
+  return (await getPmuParentDivision(pmuId))?.headUserId ?? null;
+}
+
+/**
+ * PMUs grouped by the division they hang off, for the callers that need to ask
+ * "does this division have a PMU at all?" — the create form's and the task
+ * detail page's "Show this task to PMU team" switch, which must not appear for
+ * a division with no PMU under it. Same parent resolution as everything else
+ * here; a division with none is simply absent from the map.
+ */
+export async function getPmusByParentDivision(
+  divisionIds: string[],
+): Promise<Map<string, { id: string; name: string }[]>> {
+  const byParent = new Map<string, { id: string; name: string }[]>();
+  if (divisionIds.length === 0) return byParent;
+  const pmus = await prisma.division.findMany({
+    where: {
+      kind: 'pmu',
+      OR: [
+        { pmuParentDivisionId: { in: divisionIds } },
+        { parentId: { in: divisionIds } },
+      ],
+    },
+    select: { id: true, name: true, pmuParentDivisionId: true, parentId: true },
+    orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }],
+  });
+  for (const p of pmus) {
+    const parentId = p.pmuParentDivisionId ?? p.parentId;
+    if (!parentId) continue;
+    const list = byParent.get(parentId) ?? [];
+    list.push({ id: p.id, name: p.name });
+    byParent.set(parentId, list);
+  }
+  return byParent;
 }
 
 /**
@@ -144,7 +192,7 @@ export async function getPmuParentDivisionHeadId(pmuId: string): Promise<string 
  * Returns clauses that are then composed with the filter clause in the page.
  */
 export async function buildVisibilityClauses(me: CallerSummary): Promise<Prisma.TaskWhereInput[]> {
-  const [headedDivisionIds, memberDivisionIds, pmuMemberIds, pmuParentHeadId, pmuTeamLeaderMemberIds, personalGrant] = await Promise.all([
+  const [headedDivisionIds, memberDivisionIds, pmuMemberIds, pmuParent, pmuTeamLeaderMemberIds, personalGrant] = await Promise.all([
     getHeadedDivisionIds(me.id),
     // Member divisions (home + admin-granted extras). Resolved by id here so
     // every task-read caller (list, counts, stats, search, calendar, priority
@@ -153,8 +201,8 @@ export async function buildVisibilityClauses(me: CallerSummary): Promise<Prisma.
     getMemberDivisionIds(me.id),
     me.isPmu ? getPmuTeammateIds(me.id) : Promise.resolve<string[]>([]),
     me.isPmu && me.pmuId
-      ? getPmuParentDivisionHeadId(me.pmuId)
-      : Promise.resolve<string | null>(null),
+      ? getPmuParentDivision(me.pmuId)
+      : Promise.resolve<{ id: string; headUserId: string | null } | null>(null),
     // Owner-scoped read access for a PMU team leader over their team's tasks
     // (empty for everyone else). Resolved here so every task-read surface picks
     // it up uniformly.
@@ -177,7 +225,8 @@ export async function buildVisibilityClauses(me: CallerSummary): Promise<Prisma.
       : await getPmuDivisionIdsFor([...new Set([...headedDivisionIds, ...memberDivisionIds])]);
 
   return buildVisibilityClausesFrom(me, headedDivisionIds, pmuMemberIds, {
-    isPmuParentDivisionHead: pmuParentHeadId !== null && pmuParentHeadId === me.id,
+    isPmuParentDivisionHead: pmuParent?.headUserId != null && pmuParent.headUserId === me.id,
+    pmuParentDivisionId: pmuParent?.id ?? null,
     memberDivisionIds,
     pmuTeamLeaderMemberIds,
     canSeePersonalTasks: personalGrant?.canSeePersonalTasks ?? false,
