@@ -38,6 +38,15 @@ import { DivisionAccordion } from '@/components/DivisionAccordion';
 const EXPANDED_KEY = 'tasks-group-expanded';
 const SCROLL_PREFIX = 'tasks-group-scroll:';
 
+/**
+ * DOM id of a division's accordion. Derived from the division id so any
+ * control on the page can address a group it does not render itself — the
+ * per-division PMU pills use it to jump to that PMU's own card below.
+ */
+export function taskGroupAnchorId(divisionId: string): string {
+  return `task-group-${divisionId}`;
+}
+
 // useLayoutEffect warns during SSR; fall back to useEffect on the server. The
 // hydration read is client-only anyway (sessionStorage), so this is safe.
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
@@ -45,6 +54,12 @@ const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffec
 type TaskGroupState = {
   isOpen: (divisionId: string) => boolean;
   toggle: (divisionId: string) => void;
+  /**
+   * Expand a group (never collapse it) and scroll it into view. For jumping
+   * between cards on this page — a PMU pill inside its parent division opening
+   * the PMU's own card further down.
+   */
+  openAndReveal: (divisionId: string) => void;
 };
 
 const TaskGroupContext = createContext<TaskGroupState | null>(null);
@@ -133,8 +148,41 @@ export function TaskGroupStateProvider({
     });
   }, []);
 
+  const openAndReveal = useCallback((divisionId: string) => {
+    // Open only — a pill that says "go to this PMU" must never close the card
+    // it is pointing at when the user taps it twice.
+    setExpanded((prev) => {
+      if (prev.has(divisionId)) return prev;
+      const next = new Set(prev);
+      next.add(divisionId);
+      try {
+        sessionStorage.setItem(EXPANDED_KEY, JSON.stringify([...next]));
+      } catch {
+        /* non-fatal */
+      }
+      return next;
+    });
+
+    // Scroll after the expansion has committed AND laid out — two frames, the
+    // same wait the Back-restore above needs. The target sits below the pill
+    // that was clicked, and a card grows downward, so its top does not move
+    // while it opens; landing on it is stable either way.
+    const reveal = () => {
+      const el = document.getElementById(taskGroupAnchorId(divisionId));
+      if (!el) return;
+      const reduced =
+        typeof window.matchMedia === 'function' &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      el.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
+    };
+    requestAnimationFrame(() => requestAnimationFrame(reveal));
+  }, []);
+
   const isOpen = useCallback((divisionId: string) => expanded.has(divisionId), [expanded]);
-  const value = useMemo<TaskGroupState>(() => ({ isOpen, toggle }), [isOpen, toggle]);
+  const value = useMemo<TaskGroupState>(
+    () => ({ isOpen, toggle, openAndReveal }),
+    [isOpen, toggle, openAndReveal],
+  );
 
   return <TaskGroupContext.Provider value={value}>{children}</TaskGroupContext.Provider>;
 }
@@ -152,6 +200,22 @@ export function GroupedDivisionAccordion({
   'open' | 'onToggle'
 >) {
   const ctx = useContext(TaskGroupContext);
-  if (!ctx) return <DivisionAccordion {...rest} />;
-  return <DivisionAccordion {...rest} open={ctx.isOpen(persistId)} onToggle={() => ctx.toggle(persistId)} />;
+  if (!ctx) return <DivisionAccordion {...rest} anchorId={taskGroupAnchorId(persistId)} />;
+  return (
+    <DivisionAccordion
+      {...rest}
+      anchorId={taskGroupAnchorId(persistId)}
+      open={ctx.isOpen(persistId)}
+      onToggle={() => ctx.toggle(persistId)}
+    />
+  );
+}
+
+/**
+ * Read the grouped-list state from a component rendered inside a card — the
+ * PMU pills, which need to open a DIFFERENT card. Returns null outside the
+ * provider (the timeline-files grouped list), so callers must degrade.
+ */
+export function useTaskGroupState(): TaskGroupState | null {
+  return useContext(TaskGroupContext);
 }

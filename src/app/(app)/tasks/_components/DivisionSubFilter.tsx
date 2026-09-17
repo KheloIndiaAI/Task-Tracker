@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
 
 import type { TaskCardInteractiveProps } from '@/components/ui';
 import { cn } from '@/lib/utils';
@@ -9,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { DivisionCardsToggle } from './DivisionCardsToggle';
 import { DivisionLaneBoard, type LaneBoardTask } from './DivisionLaneBoard';
 import { TaskListItem } from './TaskListItem';
+import { useTaskGroupState } from './TaskListState';
 
 type Child = { id: string; name: string };
 type GridTask = TaskCardInteractiveProps & { subDivisionId: string | null };
@@ -16,9 +16,14 @@ type GridTask = TaskCardInteractiveProps & { subDivisionId: string | null };
 type DivisionSubFilterProps = {
   divisionName: string;
   subDivisions: Child[];
-  /** A division's PMUs are a structurally separate division row — their tasks
-   *  already form their own card elsewhere in this same grouped list, so a
-   *  PMU pill is a quick link to that card, not an in-place filter. */
+  /**
+   * A division's PMUs are a structurally separate division row — their tasks
+   * already form their own card further down this same page, so a PMU pill
+   * opens and scrolls to that card rather than filtering in place.
+   *
+   * The page passes only PMUs that HAVE a card here, so a pill can never point
+   * at nothing.
+   */
   pmus: Child[];
   laneBoardTasks: LaneBoardTask[];
   canCurate: boolean;
@@ -53,6 +58,9 @@ export function DivisionSubFilter({
   completedGridTasks,
 }: DivisionSubFilterProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Null outside the grouped provider; the PMU pills are simply not rendered
+  // there, so there is nothing to degrade.
+  const groupState = useTaskGroupState();
 
   const toggleSubDivision = (id: string) => {
     setSelected((prev) => {
@@ -90,17 +98,22 @@ export function DivisionSubFilter({
               {s.name}
             </PillButton>
           ))}
-          {pmus.map((p) => (
-            <Link
-              key={p.id}
-              href={`/tasks?division=${p.id}`}
-              className={cn(pillBase, pillInactive, 'inline-flex items-center gap-1')}
-              title={`Open ${p.name}'s own task list`}
-            >
-              {p.name}
-              <i className="ti ti-arrow-up-right text-[10px]" aria-hidden="true" />
-            </Link>
-          ))}
+          {groupState
+            ? pmus.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => groupState.openAndReveal(p.id)}
+                  className={cn(pillBase, pillInactive, 'inline-flex items-center gap-1')}
+                  title={`Open ${p.name}'s card below`}
+                >
+                  {p.name}
+                  {/* Points down, because that is where it goes — the PMU's
+                      own card on this same page, not another view. */}
+                  <i className="ti ti-arrow-down text-[10px]" aria-hidden="true" />
+                </button>
+              ))
+            : null}
         </div>
       ) : null}
 

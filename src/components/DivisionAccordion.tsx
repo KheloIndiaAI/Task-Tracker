@@ -20,6 +20,12 @@ type DivisionAccordionProps = {
    */
   open?: boolean;
   onToggle?: () => void;
+  /**
+   * Stable DOM id for the outer section, so another control on the page can
+   * scroll this group into view. `useId` cannot serve: it is unique per mount,
+   * not derivable from the division being addressed.
+   */
+  anchorId?: string;
   children: React.ReactNode;
 };
 
@@ -38,6 +44,7 @@ export function DivisionAccordion({
   defaultOpen = false,
   open: controlledOpen,
   onToggle,
+  anchorId,
   children,
 }: DivisionAccordionProps) {
   const [internalOpen, setInternalOpen] = useState(defaultOpen);
@@ -51,7 +58,11 @@ export function DivisionAccordion({
 
   return (
     <section
-      className="relative overflow-hidden rounded-xl border border-line bg-panel shadow-card"
+      id={anchorId}
+      // scroll-mt clears the app's sticky header (h-14 phone / h-16 up) when
+      // something scrolls this group into view, so the card's own header is
+      // not left tucked underneath it.
+      className="relative overflow-hidden rounded-xl border border-line bg-panel shadow-card scroll-mt-20 md:scroll-mt-24"
       // A whisper of the division's own colour, so a long scroll through
       // several divisions never leaves you unsure which one you are reading.
       // Mixed into --panel rather than laid over it as translucency, so it
