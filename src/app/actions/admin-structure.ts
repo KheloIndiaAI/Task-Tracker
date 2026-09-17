@@ -682,21 +682,30 @@ export async function setDivisionHeadAction(
 // ============================================================
 
 const setPmuTeamHeadSchema = z.object({
-  divisionId: z.string().uuid(),
+  /** The PMU itself (a Division row of kind 'pmu'), not its parent division. */
+  pmuId: z.string().uuid(),
   headUserId: z
     .union([z.literal(''), z.string().uuid()])
     .transform((v) => (v && v.length > 0 ? v : null)),
 });
 
 /**
- * Designate (or clear) a division's **PMU Team Head** — the PMU member holding
- * `pmu_role = 'pmu_team_leader'`, who administers the PMU team's tasks (edit,
+ * Designate (or clear) ONE PMU's **Team Head** — the member of that PMU holding
+ * `pmu_role = 'pmu_team_leader'`, who administers the team's tasks (edit,
  * allot, collaborators, attachments, and delete of the team's own tasks — see
  * PERMISSIONS.md §5.19). Super Admin only, audited.
  *
- * Promoting a new head **demotes** the previous one (in the same PMU group) to
- * `pmu_senior_consultant`, so a PMU has at most one head. Clearing demotes the
- * division's current head, leaving the PMU with none (and no team admin).
+ * Scoped to a single PMU on purpose. A division can carry several (Khelo India
+ * Scheme has INFRA_PMU, KIS_PMU and PPP_PMU), and each runs its own team, so
+ * each gets its own head. Until 2026-09-17 this took the PARENT division id:
+ * it showed whichever leader happened to sort first as "the" head, offered
+ * candidates pooled across every PMU under the division, and cleared demoted
+ * the leaders of ALL of them at once.
+ *
+ * Promoting demotes the previous head OF THAT PMU to `pmu_senior_consultant`,
+ * so a PMU has at most one head; the other PMUs under the same division are
+ * untouched. Clearing demotes only that PMU's head, leaving it with no team
+ * admin.
  */
 export async function setPmuTeamHeadAction(
   prev: AdminStructureState | undefined,
@@ -707,37 +716,39 @@ export async function setPmuTeamHeadAction(
   if (!guard.ok) return fail(guard.error, epoch);
 
   const parsed = setPmuTeamHeadSchema.safeParse({
-    divisionId: formData.get('divisionId'),
+    pmuId: formData.get('pmuId'),
     headUserId: formData.get('headUserId') ?? '',
   });
   if (!parsed.success) return fail('Invalid input.', epoch);
 
-  const division = await prisma.division.findUnique({
-    where: { id: parsed.data.divisionId },
+  const pmu = await prisma.division.findUnique({
+    where: { id: parsed.data.pmuId },
     select: { id: true, name: true, kind: true },
   });
-  if (!division) return fail('Division not found.', epoch);
-  if (division.kind !== 'division') {
-    return fail('PMU teams sit inside a top-level division.', epoch);
+  if (!pmu) return fail('PMU not found.', epoch);
+  if (pmu.kind !== 'pmu') {
+    return fail('A team head can only be set on a PMU.', epoch);
   }
 
-  // The chosen head, if any, must be an active PMU member of THIS division.
-  let newHead: { id: string; name: string; pmuId: string | null } | null = null;
+  // The chosen head, if any, must be an active member of THIS PMU. Keying on
+  // pmu_id rather than the home division is what keeps sibling PMUs apart —
+  // every member of a PMU shares its parent division as their home.
+  let newHead: { id: string; name: string } | null = null;
   if (parsed.data.headUserId) {
     const u = await prisma.user.findUnique({
       where: { id: parsed.data.headUserId },
-      select: { id: true, name: true, isActive: true, isPmu: true, divisionId: true, pmuId: true },
+      select: { id: true, name: true, isActive: true, isPmu: true, pmuId: true },
     });
     if (!u || !u.isActive) return fail('User not found or disabled.', epoch);
-    if (!u.isPmu || u.divisionId !== division.id) {
-      return fail('Choose a PMU member of this division.', epoch);
+    if (!u.isPmu || u.pmuId !== pmu.id) {
+      return fail('Choose a member of this PMU.', epoch);
     }
-    newHead = { id: u.id, name: u.name, pmuId: u.pmuId };
+    newHead = { id: u.id, name: u.name };
   }
 
-  // Current head(s) of the division's PMU, for the audit trail.
+  // Current head(s) of THIS PMU, for the audit trail.
   const prevLeaders = await prisma.user.findMany({
-    where: { divisionId: division.id, isPmu: true, pmuRole: 'pmu_team_leader' },
+    where: { pmuId: pmu.id, isPmu: true, pmuRole: 'pmu_team_leader' },
     select: { id: true, name: true },
   });
   if (newHead && prevLeaders.length === 1 && prevLeaders[0].id === newHead.id) {
@@ -747,13 +758,12 @@ export async function setPmuTeamHeadAction(
   try {
     await prisma.$transaction(async (tx) => {
       if (newHead) {
-        // Demote any other current team leader in the same PMU group…
+        // Demote any other current leader OF THIS PMU…
         await tx.user.updateMany({
           where: {
-            divisionId: division.id,
+            pmuId: pmu.id,
             isPmu: true,
             pmuRole: 'pmu_team_leader',
-            pmuId: newHead.pmuId,
             id: { not: newHead.id },
           },
           data: { pmuRole: 'pmu_senior_consultant' },
@@ -764,9 +774,9 @@ export async function setPmuTeamHeadAction(
           data: { pmuRole: 'pmu_team_leader' },
         });
       } else {
-        // Clear: demote the division's current PMU team head(s).
+        // Clear: demote this PMU's head. Sibling PMUs keep theirs.
         await tx.user.updateMany({
-          where: { divisionId: division.id, isPmu: true, pmuRole: 'pmu_team_leader' },
+          where: { pmuId: pmu.id, isPmu: true, pmuRole: 'pmu_team_leader' },
           data: { pmuRole: 'pmu_senior_consultant' },
         });
       }
@@ -775,7 +785,7 @@ export async function setPmuTeamHeadAction(
       guard.userId,
       'role_change',
       'division',
-      division.id,
+      pmu.id,
       { pmuTeamHead: prevLeaders.map((l) => l.name).join(', ') || null },
       { pmuTeamHead: newHead?.name ?? null },
     );
