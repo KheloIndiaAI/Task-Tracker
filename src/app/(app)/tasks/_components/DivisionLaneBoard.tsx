@@ -382,6 +382,14 @@ export function DivisionLaneBoard({
  * always rendered past md and the unusable one is disabled rather than removed,
  * so the strip does not shift sideways as you page through it. Hidden below md,
  * where the columns stack and there is nothing to slide.
+ *
+ * A tall amber RAIL, not a 32px button. Beside a column of two dozen task rows
+ * a small neutral square was easy to miss and fiddly to hit, and the one thing
+ * it does — paging between the JS Priority lanes — is exactly what the amber
+ * accent marks everywhere else on this board. Height is
+ * `clamp(5rem, 60%, 20rem)`: it grows with the board so it stays findable on a
+ * long division, and is bounded at both ends so it neither shrinks to nothing
+ * on a one-task card nor turns into a full-height slab of colour on a busy one.
  */
 function SlideArrow({
   side,
@@ -399,15 +407,16 @@ function SlideArrow({
       disabled={disabled}
       aria-label={side === 'left' ? 'Show previous columns' : 'Show next columns'}
       className={cn(
-        'absolute top-1/2 z-10 hidden h-8 w-8 -translate-y-1/2 place-items-center rounded-lg',
-        'border border-line bg-panel text-ink-2 shadow-card transition-colors md:grid',
-        'hover:border-ink-4 hover:text-ink',
-        'disabled:cursor-default disabled:opacity-35 disabled:hover:border-line disabled:hover:text-ink-2',
+        'absolute top-1/2 z-10 hidden w-8 -translate-y-1/2 place-items-center rounded-lg md:grid',
+        'h-[clamp(5rem,60%,20rem)]',
+        'border border-accent-line bg-accent-soft text-accent shadow-card transition-colors',
+        'hover:border-accent',
+        'disabled:cursor-default disabled:opacity-35 disabled:hover:border-accent-line',
         side === 'left' ? 'left-0' : 'right-0',
       )}
     >
       <i
-        className={cn('ti text-[15px]', side === 'left' ? 'ti-chevron-left' : 'ti-chevron-right')}
+        className={cn('ti text-[18px]', side === 'left' ? 'ti-chevron-left' : 'ti-chevron-right')}
         aria-hidden="true"
       />
     </button>
