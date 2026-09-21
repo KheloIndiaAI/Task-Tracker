@@ -530,3 +530,50 @@ export async function fetchOpenTasksByDivision(
   for (const d of result) d.subDivisions.sort((a, b) => b.count - a.count);
   return result;
 }
+
+/**
+ * The divisions a task picker offers this caller — flat, and scoped to who is
+ * signed in:
+ *
+ *   - Super Admin / OSD read every task, so they are offered every division
+ *     (and PMU team, under `includePmus`) — the list these pickers always
+ *     showed.
+ *   - Everyone else is offered the divisions holding at least one task they
+ *     can read (under `activeOnly`, one that is not completed). A Regional
+ *     Centre officer sees their centre's divisions, a Ministry Headquarter
+ *     officer theirs, and no entry leads to a list the caller could never see.
+ *
+ * Organizations and directorates never appear: no task lives on them. The
+ * order is the pickers' long-standing one — divisions before PMU teams, then
+ * display order, then name.
+ */
+export async function fetchTaskDivisionOptions(
+  callerId: string,
+  opts: { activeOnly?: boolean; includePmus?: boolean } = {},
+): Promise<{ id: string; name: string }[]> {
+  const me = await prisma.user.findUnique({ where: { id: callerId }, select: STAT_CALLER_SELECT });
+  if (!me) return [];
+
+  const kinds: ('division' | 'pmu')[] = opts.includePmus ? ['division', 'pmu'] : ['division'];
+  const scope = await buildVisibilityClauses(me);
+  let ids: string[] | null = null;
+  if (scope !== null) {
+    const rows = await prisma.task.groupBy({
+      by: ['divisionId'],
+      where: {
+        archivedAt: null,
+        parentTaskId: null,
+        ...(opts.activeOnly ? { status: { not: 'completed' } } : {}),
+        AND: visibilityAnd(scope),
+      },
+    });
+    ids = rows.map((r) => r.divisionId);
+    if (ids.length === 0) return [];
+  }
+
+  return prisma.division.findMany({
+    where: { kind: { in: kinds }, ...(ids ? { id: { in: ids } } : {}) },
+    select: { id: true, name: true },
+    orderBy: [{ kind: 'asc' }, { displayOrder: 'asc' }, { name: 'asc' }],
+  });
+}

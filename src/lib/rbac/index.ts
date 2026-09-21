@@ -1,4 +1,10 @@
 import { prisma } from '@/lib/db';
+import {
+  expandHeadedToDescendants,
+  isStructuralKind,
+  organizationOf,
+  type StructureTreeNode,
+} from '@/lib/structure-shared';
 
 import {
   canTransferTaskTo,
@@ -34,18 +40,41 @@ export * from './rules';
  * set per user via user_division_access, not in code.
  */
 
+/** Every node in the organization tree — small (tens of rows), read whole. */
+async function readStructureTree(): Promise<StructureTreeNode[]> {
+  return prisma.division.findMany({
+    select: { id: true, kind: true, parentId: true, pmuParentDivisionId: true },
+  });
+}
+
 /**
- * Divisions the user holds head powers over right now: direct headships
- * (divisions.head_user_id) plus active, unrevoked delegations.
+ * Divisions the user holds head powers over right now:
+ *
+ *   - direct headships (divisions.head_user_id) — a division, or a
+ *     directorate an Assistant Director heads;
+ *   - active, unrevoked delegations of either;
+ *   - the organization their home division sits in, when the Super-Admin-set
+ *     "Organization head" toggle (users.is_organization_head) is on;
+ *
+ * and then, for every organization / directorate among those, every division
+ * beneath it — heading a structural level means heading its divisions (see
+ * expandHeadedToDescendants). This is the single place that cascade happens,
+ * so every head check downstream — visibility, task management, delete,
+ * notice board, lane curation, report access — inherits it without change.
+ *
+ * The hot path stays one round trip: the user's toggle is read alongside the
+ * other two queries, and a user who heads only divisions (everyone before
+ * 2026-09-21) gets back exactly the ids they always did. The tree is read —
+ * a second round trip — only when a structural headship or the toggle exists.
  */
 export async function getHeadedDivisionIds(
   userId: string,
   now: Date = new Date(),
 ): Promise<string[]> {
-  const [headed, delegated] = await Promise.all([
+  const [headed, delegated, user] = await Promise.all([
     prisma.division.findMany({
       where: { headUserId: userId },
-      select: { id: true },
+      select: { id: true, kind: true },
     }),
     prisma.divisionAccessDelegation.findMany({
       where: {
@@ -54,13 +83,31 @@ export async function getHeadedDivisionIds(
         startsAt: { lte: now },
         endsAt: { gte: now },
       },
-      select: { divisionId: true },
+      select: { divisionId: true, division: { select: { kind: true } } },
+    }),
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: { divisionId: true, isOrganizationHead: true },
     }),
   ]);
   const ids = new Set<string>();
-  for (const d of headed) ids.add(d.id);
-  for (const d of delegated) ids.add(d.divisionId);
-  return [...ids];
+  let needsTree = user?.isOrganizationHead === true;
+  for (const d of headed) {
+    ids.add(d.id);
+    if (isStructuralKind(d.kind)) needsTree = true;
+  }
+  for (const d of delegated) {
+    ids.add(d.divisionId);
+    if (isStructuralKind(d.division.kind)) needsTree = true;
+  }
+  if (!needsTree) return [...ids];
+
+  const tree = await readStructureTree();
+  if (user?.isOrganizationHead) {
+    const org = organizationOf(user.divisionId, tree);
+    if (org) ids.add(org);
+  }
+  return expandHeadedToDescendants([...ids], tree);
 }
 
 /**
@@ -151,13 +198,15 @@ export async function resolveDivisionOwner(
 }
 
 /**
- * Map of userId → divisions they head right now (direct + delegated),
- * for decorating candidate lists without one query per user.
+ * Map of userId → divisions they head right now, for decorating candidate
+ * lists without one query per user. The batch twin of getHeadedDivisionIds —
+ * same three sources, same cascade — so a Regional Director is a head in a
+ * transfer picker exactly when they are a head everywhere else.
  */
 export async function getHeadedDivisionsByUser(
   now: Date = new Date(),
 ): Promise<Map<string, string[]>> {
-  const [headRows, delegationRows] = await Promise.all([
+  const [headRows, delegationRows, orgHeads, tree] = await Promise.all([
     prisma.division.findMany({
       where: { headUserId: { not: null } },
       select: { id: true, headUserId: true },
@@ -166,6 +215,13 @@ export async function getHeadedDivisionsByUser(
       where: { revokedAt: null, startsAt: { lte: now }, endsAt: { gte: now } },
       select: { divisionId: true, delegatedToId: true },
     }),
+    // Like head_user_id rows above, not filtered on isActive — the same
+    // answer getHeadedDivisionIds gives for any one of these users.
+    prisma.user.findMany({
+      where: { isOrganizationHead: true },
+      select: { id: true, divisionId: true },
+    }),
+    readStructureTree(),
   ]);
   const byUser = new Map<string, Set<string>>();
   const add = (userId: string, divisionId: string) => {
@@ -175,7 +231,13 @@ export async function getHeadedDivisionsByUser(
   };
   for (const r of headRows) if (r.headUserId) add(r.headUserId, r.id);
   for (const r of delegationRows) add(r.delegatedToId, r.divisionId);
-  return new Map([...byUser].map(([k, v]) => [k, [...v]]));
+  for (const u of orgHeads) {
+    const org = organizationOf(u.divisionId, tree);
+    if (org) add(u.id, org);
+  }
+  return new Map(
+    [...byUser].map(([k, v]) => [k, expandHeadedToDescendants([...v], tree)]),
+  );
 }
 
 /**

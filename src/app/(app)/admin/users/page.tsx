@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 
 import { CreateUserDialog } from './_components/CreateUserDialog';
 import { UsersList, type UserRow } from './_components/UsersList';
+import type { StructureKind } from '@/lib/structure-shared';
 
 type Filter = 'all' | 'active' | 'disabled' | 'super_admin';
 
@@ -82,7 +83,7 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
     name: d.name,
     parentId: d.parentId,
     pmuParentDivisionId: d.pmuParentDivisionId,
-    kind: d.kind as 'division' | 'sub_division' | 'section' | 'pmu',
+    kind: d.kind as StructureKind,
   }));
 
   const supervisors = users
@@ -99,7 +100,7 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
           divisionsRaw.map((d) => ({
             id: d.id,
             name: d.name,
-            kind: d.kind as 'division' | 'sub_division' | 'section' | 'pmu',
+            kind: d.kind as StructureKind,
             parentId: d.parentId,
             pmuParentDivisionId: d.pmuParentDivisionId,
             displayOrder: d.displayOrder,
@@ -129,6 +130,7 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
     canAccessBusinessCards: u.canAccessBusinessCards,
     canAddJsComment: u.canAddJsComment,
     canGenerateReports: u.canGenerateReports,
+    isOrganizationHead: u.isOrganizationHead,
     lastLogin: u.lastLogin,
   }));
 

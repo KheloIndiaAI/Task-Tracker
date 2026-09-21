@@ -13,6 +13,7 @@ import {
   PMU_ROLE_LABEL,
 } from '@/lib/labels';
 import { isEligibleDelegate } from '@/lib/rbac';
+import { organizationOf, STRUCTURE_KIND_LABEL } from '@/lib/structure-shared';
 import { cn } from '@/lib/utils';
 
 import {
@@ -42,10 +43,13 @@ export default async function ProfilePage() {
   // ── Division access (RBAC): headships + live/upcoming delegations ──
   const now = new Date();
   const [headedDirect, delegationsGiven, delegationsReceived] = await Promise.all([
+    // What this user may delegate: every division or directorate they head
+    // directly — plus, under the Organization-head toggle, their
+    // organization (resolved below).
     prisma.division.findMany({
-      where: { headUserId: me.id, kind: 'division' },
-      select: { id: true, name: true },
-      orderBy: { displayOrder: 'asc' },
+      where: { headUserId: me.id, kind: { in: ['division', 'directorate'] } },
+      select: { id: true, name: true, kind: true },
+      orderBy: [{ kind: 'asc' }, { displayOrder: 'asc' }],
     }),
     prisma.divisionAccessDelegation.findMany({
       where: { delegatedById: me.id, revokedAt: null, endsAt: { gte: now } },
@@ -65,8 +69,22 @@ export default async function ProfilePage() {
     }),
   ]);
 
+  // An organization head delegates the organization their home division sits
+  // in — the same one getHeadedDivisionIds grants them. Listed first.
+  const headedOrg = me.isOrganizationHead
+    ? await prisma.division
+        .findMany({
+          select: { id: true, name: true, kind: true, parentId: true, pmuParentDivisionId: true },
+        })
+        .then((tree) => {
+          const orgId = organizationOf(me.divisionId, tree);
+          return tree.find((d) => d.id === orgId) ?? null;
+        })
+    : null;
+  const delegable = [...(headedOrg ? [headedOrg] : []), ...headedDirect];
+
   let headedDivisionOptions: HeadedDivisionOption[] = [];
-  if (headedDirect.length > 0) {
+  if (delegable.length > 0) {
     const [activeUsers, directHeadRows] = await Promise.all([
       prisma.user.findMany({
         where: { isActive: true, id: { not: me.id } },
@@ -92,9 +110,13 @@ export default async function ProfilePage() {
       list.push(d.id);
       directHeadedByUser.set(d.headUserId, list);
     }
-    headedDivisionOptions = headedDirect.map((division) => ({
+    headedDivisionOptions = delegable.map((division) => ({
       id: division.id,
-      name: division.name,
+      // "Ministry Headquarter (organization)" — a division reads as itself.
+      name:
+        division.kind === 'division'
+          ? division.name
+          : `${division.name} (${STRUCTURE_KIND_LABEL[division.kind].toLowerCase()})`,
       targets: activeUsers
         .filter((u) =>
           isEligibleDelegate(

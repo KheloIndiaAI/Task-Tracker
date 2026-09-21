@@ -57,6 +57,16 @@ async function findOrCreateDivision(
 ) {
   const existing = await prisma.division.findFirst({ where: { name } });
   if (existing) return existing;
+  // Every division sits in an organization (2026-09-21): a new division with
+  // no parent given joins Ministry Headquarter when the database has it.
+  const hq =
+    kind === 'division' && !parentId
+      ? await prisma.division.findFirst({
+          where: { kind: 'organization', name: 'Ministry Headquarter' },
+          orderBy: { createdAt: 'asc' },
+          select: { id: true },
+        })
+      : null;
   return prisma.division.create({
     data: {
       name,
@@ -65,7 +75,7 @@ async function findOrCreateDivision(
       hasPmu: false,
       displayOrder: order,
       createdById,
-      parentId,
+      parentId: parentId ?? hq?.id,
     },
   });
 }

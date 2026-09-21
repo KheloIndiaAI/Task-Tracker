@@ -8,6 +8,7 @@ import {
   HIERARCHY_SLOT_LABEL,
 } from '@/lib/labels';
 import { cn } from '@/lib/utils';
+import { organizationOf, type StructureKind } from '@/lib/structure-shared';
 
 /**
  * Shared form fields used inside Create and Edit dialogs.
@@ -22,7 +23,7 @@ export type UserFormDivisionOption = {
   name: string;
   parentId: string | null;
   pmuParentDivisionId: string | null;
-  kind: 'division' | 'sub_division' | 'section' | 'pmu';
+  kind: StructureKind;
 };
 
 export type UserFormSupervisorOption = {
@@ -49,6 +50,7 @@ export type UserFormDefaults = {
   canAccessBusinessCards?: boolean;
   canAddJsComment?: boolean;
   canGenerateReports?: boolean;
+  isOrganizationHead?: boolean;
 };
 
 type UserFormFieldsProps = {
@@ -96,6 +98,13 @@ export function UserFormFields({
   const [subDivisionId, setSubDivisionId] = useState(defaults?.subDivisionId ?? '');
   const [sectionId, setSectionId] = useState(defaults?.sectionId ?? '');
   const [pmuId, setPmuId] = useState(defaults?.pmuId ?? '');
+  // The organization the Organization-head toggle would make this person head
+  // of — the one their home division sits in. Recomputed as the home division
+  // changes, so the switch always names what it grants.
+  const homeOrgId = divisionId ? organizationOf(divisionId, divisions) : null;
+  const homeOrgName = homeOrgId
+    ? divisions.find((d) => d.id === homeOrgId)?.name ?? null
+    : null;
   // Extra divisions the user is a full member of, beyond their home division.
   const [extraDivisionIds, setExtraDivisionIds] = useState<Set<string>>(
     () => new Set(defaults?.extraDivisionIds ?? []),
@@ -294,6 +303,24 @@ export function UserFormFields({
             name="canGenerateReports"
             defaultChecked={defaults?.canGenerateReports}
             ariaLabel="Grant report generation access"
+          />
+        </label>
+        <label className="mt-2 flex items-start justify-between gap-3 px-3 py-2.5 rounded-lg border border-line">
+          <span className="min-w-0">
+            <span className="inline-flex items-center gap-2 text-[12px] text-ink">
+              <i className="ti ti-building-community text-[14px] text-primary" aria-hidden="true" />
+              Organization head
+            </span>
+            <span className="mt-0.5 block text-[11px] text-ink-3">
+              {homeOrgName
+                ? `Head of ${homeOrgName}, with full head powers over every directorate and division in it. Super Admins head every organization already.`
+                : 'Makes this person head of the organization their home division sits in. Pick a home division first.'}
+            </span>
+          </span>
+          <Switch
+            name="isOrganizationHead"
+            defaultChecked={defaults?.isOrganizationHead}
+            ariaLabel="Make organization head"
           />
         </label>
       </Section>

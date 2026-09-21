@@ -828,8 +828,20 @@ async function main() {
 
   await wipe();
 
-  // ── Create divisions ────────────────────────────────────
+  // ── Create the organization, then its divisions ─────────
+  // Every division sits in an organization (2026-09-21). The ministry's own
+  // structure lives in "Ministry Headquarter" — the same row migration
+  // 20260921120200_create_ministry_headquarter creates in production.
   console.log('Creating divisions…');
+  const hq = await prisma.division.create({
+    data: {
+      name: 'Ministry Headquarter',
+      kind: 'organization',
+      abbreviation: '',
+      avatarColour: '#1e1b4b',
+      displayOrder: 0,
+    },
+  });
   const divisionData = [
     { name: DIV.OFFICE, kind: 'division' as const, avatarColour: '#1e1b4b', displayOrder: 0, abbreviation: 'OJS' },
     { name: DIV.KI, kind: 'division' as const, avatarColour: '#0c4a6e', displayOrder: 1, hasPmu: true, abbreviation: 'KI' },
@@ -842,7 +854,7 @@ async function main() {
 
   const divMap: Record<string, string> = {};
   for (const d of divisionData) {
-    const created = await prisma.division.create({ data: d });
+    const created = await prisma.division.create({ data: { ...d, parentId: hq.id } });
     divMap[d.name] = created.id;
   }
 

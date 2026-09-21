@@ -26,6 +26,7 @@ import { useTransition } from 'react';
 
 import { ManageMembersDialog } from './ManageMembersDialog';
 import type { TreeUser } from './StructureTree';
+import type { StructureKind } from '@/lib/structure-shared';
 
 export type InspectorUser = {
   id: string;
@@ -57,7 +58,7 @@ type PersonInspectorProps = {
   divisions: UserFormDivisionOption[];
   supervisors: UserFormSupervisorOption[];
   selfId: string;
-  activeDivision?: { id: string; name: string; kind: 'division' | 'sub_division' | 'section' | 'pmu' };
+  activeDivision?: { id: string; name: string; kind: StructureKind };
   allUsers?: TreeUser[];
 };
 

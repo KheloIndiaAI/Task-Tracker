@@ -11,7 +11,14 @@ import { getPmuTeamMemberIds } from '@/lib/pmu-team';
 import { getContributorTaskIds } from '@/lib/task-participants';
 import { resolveGroupByDivision } from '@/lib/task-grouping-shared';
 import { canAccessReportGeneration } from '@/lib/reports-shared';
-import { fetchTaskCounts, fetchVisibleTasks, getPmuParentDivisionHeadId, type TaskFilter, type TaskSort } from '@/lib/visibility';
+import {
+  fetchTaskCounts,
+  fetchTaskDivisionOptions,
+  fetchVisibleTasks,
+  getPmuParentDivisionHeadId,
+  type TaskFilter,
+  type TaskSort,
+} from '@/lib/visibility';
 
 import { TaskScopeControls } from './_components/TaskScopeControls';
 import { type LaneBoardTask } from './_components/DivisionLaneBoard';
@@ -98,6 +105,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
     pmuParentHeadId,
     pmuTeamMemberIds,
     completedResult,
+    reportDivisions,
   ] = await Promise.all([
     fetchVisibleTasks({ callerId: me.id, filter, divisionId: divisionFilter || undefined, sort }),
     fetchTaskCounts(me.id),
@@ -138,6 +146,14 @@ export default async function TasksPage({ searchParams }: PageProps) {
           ownerId: filter === 'mine' ? me.id : undefined,
         })
       : Promise.resolve(null),
+    // The report dialog's Division list — flat, and scoped to the signed-in
+    // user: the divisions and PMU teams holding active work they can read
+    // (every one, for Super Admin / OSD). Matches what the report itself can
+    // contain, so no entry can produce a report of work the caller cannot see.
+    // Only fetched for someone who can open the dialog.
+    canAccessReportGeneration(me, headedDivisionIds)
+      ? fetchTaskDivisionOptions(me.id, { activeOnly: true, includePmus: true })
+      : Promise.resolve<{ id: string; name: string }[]>([]),
   ]);
 
   // Mobile task-card action permissions. `canSetFortnight` (Add to Priority Board
@@ -160,13 +176,6 @@ export default async function TasksPage({ searchParams }: PageProps) {
     headedDivisionIds,
   };
   const noticeByDivision = new Map(divisions.map((d) => [d.id, d.noticeBoard]));
-  // The Division filter dropdown and the report dialog only ever offered
-  // top-level divisions + PMUs — sub-divisions rode along in the same query
-  // above purely to build childrenByDivision below, so they're filtered back
-  // out here rather than widening those two unrelated pickers.
-  const topLevelDivisions = divisions
-    .filter((d) => d.kind === 'division' || d.kind === 'pmu')
-    .map((d) => ({ id: d.id, name: d.name }));
   // Per-division sub-division + PMU pills on the grouped view (DivisionSubFilter
   // below) — a PMU's parent is its own pmuParentDivisionId, falling back to
   // parentId, same resolution getPmuDivisionIdsFor uses elsewhere.
@@ -259,7 +268,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
               </h1>
             </div>
             <div className="flex items-center gap-2">
-              {canAccessReports ? <ReportGenerationDialog divisions={topLevelDivisions} /> : null}
+              {canAccessReports ? <ReportGenerationDialog divisions={reportDivisions} /> : null}
               <div className="hidden md:block">
                 <QuickCreatePrimary />
               </div>

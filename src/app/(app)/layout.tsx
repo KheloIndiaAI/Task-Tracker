@@ -69,6 +69,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           me.isSuperAdmin || me.hierarchySlot === 'osd'
             ? { kind: { in: ['division', 'pmu'] } }
             : {
+                // Only divisions and PMUs carry tasks. Without this, an
+                // organization or directorate head would be offered the
+                // organization row itself — their headed ids include it, since
+                // heading it is what cascades to the divisions beneath.
+                kind: { in: ['division', 'pmu'] },
                 OR: [
                   { id: { in: ownTargetIds } },
                   { kind: 'pmu', pmuParentDivisionId: { in: headedDivisionIds } },
