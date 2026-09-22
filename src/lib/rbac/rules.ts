@@ -18,6 +18,8 @@
  * `src/lib/rbac/index.ts`.
  */
 
+import { isDirectorGrade } from '@/lib/hierarchy-slots';
+
 export type RbacRole = 'super_admin' | 'division_head' | 'division_user';
 
 export type RbacActor = {
@@ -204,7 +206,7 @@ export function canSetJsPriorityLane(
 ): boolean {
   if (caller.isSuperAdmin) return true;
   if (caller.hierarchySlot === 'osd') return true;
-  if (caller.hierarchySlot === 'director' && caller.memberDivisionIds.includes(task.divisionId)) {
+  if (isDirectorGrade(caller.hierarchySlot) && caller.memberDivisionIds.includes(task.divisionId)) {
     return true;
   }
   return caller.headedDivisionIds.includes(task.divisionId);
@@ -315,7 +317,7 @@ export function canManageTask(
   if (task.ownerId === caller.id || task.createdById === caller.id) return true;
   if (caller.isSuperAdmin) return true;
   if (caller.hierarchySlot === 'osd' || caller.hierarchySlot === 'js') return true;
-  if (caller.hierarchySlot === 'director' && caller.memberDivisionIds.includes(task.divisionId)) {
+  if (isDirectorGrade(caller.hierarchySlot) && caller.memberDivisionIds.includes(task.divisionId)) {
     return true;
   }
   if (caller.headedDivisionIds.includes(task.divisionId)) return true;

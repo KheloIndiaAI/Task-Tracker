@@ -9,8 +9,10 @@ export const HIERARCHY_SLOT_LABEL: Record<string, string> = {
   js: 'Joint Secretary',
   osd: 'Officer on Special Duty',
   director: 'Director',
+  regional_director: 'Regional Director',
   deputy_secretary: 'Deputy Secretary',
   under_secretary: 'Under Secretary',
+  assistant_director: 'Assistant Director',
   section_officer: 'Section Officer',
   aso: 'Assistant Section Officer',
   consultant: 'Consultant',
@@ -21,14 +23,21 @@ export const HIERARCHY_SLOT_LABEL: Record<string, string> = {
  * the officer ladder is 1–7. `consultant` is deliberately absent — it is an
  * unranked support role, so consumers render it without a level badge
  * (guard with `!= null`, since the apex is a falsy 0).
+ *
+ * Levels may be shared: the Sports Authority of India grades sit alongside
+ * their ministry equivalents — Regional Director with Director (3), Assistant
+ * Director with Under Secretary (5). Rank only; powers are separate (see
+ * isDirectorGrade in hierarchy-slots.ts).
  */
 export const HIERARCHY_SLOT_LEVEL: Record<string, number> = {
   hmyas: 0,
   js: 1,
   osd: 2,
   director: 3,
+  regional_director: 3,
   deputy_secretary: 4,
   under_secretary: 5,
+  assistant_director: 5,
   section_officer: 6,
   aso: 7,
 };

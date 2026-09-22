@@ -34,6 +34,7 @@ import {
 import { getPmuTeamMemberIds, isElevatedOverDivision } from '@/lib/pmu-team';
 import { resolvePmuTeamShareOnCreate } from '@/lib/pmu-team-shared';
 import { isTaskBoardKind } from '@/lib/structure-shared';
+import { DIRECTOR_GRADE_SLOTS, isDirectorGrade } from '@/lib/hierarchy-slots';
 import {
   buildTaskParticipantWhere,
   isTaskContributor,
@@ -219,9 +220,10 @@ async function canEditTaskDetails(
   if (!caller) return false;
   if (caller.isSuperAdmin) return true;
   if (caller.hierarchySlot === 'js' || caller.hierarchySlot === 'osd') return true;
-  // A Director who is a member (home or admin-granted extra) of the task's
+  // A Director-grade officer (Director, Regional Director or Assistant
+  // Director) who is a member (home or admin-granted extra) of the task's
   // division may redefine it, matching the canEditTask management gate.
-  if (caller.hierarchySlot === 'director') {
+  if (isDirectorGrade(caller.hierarchySlot)) {
     const memberDivisionIds = await getMemberDivisionIds(callerId);
     if (memberDivisionIds.includes(task.divisionId)) return true;
   }
@@ -2091,7 +2093,7 @@ export async function setJsPriorityLaneAction(
           const chainOfficers = await tx.user.findMany({
             where: {
               divisionId: task.owner.divisionId,
-              hierarchySlot: { in: ['director', 'section_officer'] },
+              hierarchySlot: { in: [...DIRECTOR_GRADE_SLOTS, 'section_officer'] },
               isActive: true,
               id: { notIn: [me.id, task.ownerId] },
             },

@@ -22,6 +22,7 @@ import { prisma } from '@/lib/db';
 import { ACTOR_SUMMARY_SELECT, USER_SUMMARY_SELECT } from '@/lib/prisma-selects';
 import { initialsOf } from '@/lib/format';
 import { canCreateTaskOutsideOwnDivisions, getRbacActor } from '@/lib/rbac';
+import { isDirectorGrade } from '@/lib/hierarchy-slots';
 import { isS3Configured } from '@/lib/s3';
 import { buildTfVisibilityClause } from '@/lib/timeline-files';
 import { cn } from '@/lib/utils';
@@ -159,7 +160,7 @@ export default async function TimelineFileDetailPage({ params }: PageProps) {
     !isArchived &&
     (me.isSuperAdmin ||
       me.hierarchySlot === 'osd' ||
-      (me.hierarchySlot === 'director' &&
+      (isDirectorGrade(me.hierarchySlot) &&
         tf.markedTo.some((m) => m.division.id === me.divisionId)));
   // Spawning a task from a TF always produces a division-level task, so
   // the head rule applies: Super Admin, OSD, or head/delegate of a marked

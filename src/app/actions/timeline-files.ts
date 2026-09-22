@@ -10,6 +10,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { touchTimelineFileActivity } from '@/lib/activity';
 import { buildTfVisibilityClause } from '@/lib/timeline-files';
+import { DIRECTOR_GRADE_SLOTS, isDirectorGrade } from '@/lib/hierarchy-slots';
 
 /**
  * Timeline File server actions (PRD §5.2).
@@ -195,7 +196,7 @@ export async function createTimelineFileAction(
     const directors = await prisma.user.findMany({
       where: {
         divisionId: { in: parsed.data.markedTo },
-        hierarchySlot: 'director',
+        hierarchySlot: { in: [...DIRECTOR_GRADE_SLOTS] },
         isActive: true,
       },
       select: { id: true },
@@ -287,7 +288,7 @@ export async function updateTimelineFileStatusAction(
     meRow &&
     (meRow.isSuperAdmin ||
       meRow.hierarchySlot === 'osd' ||
-      (meRow.hierarchySlot === 'director' &&
+      (isDirectorGrade(meRow.hierarchySlot) &&
         meRow.divisionId === tf.createdBy.divisionId));
   if (!allowed) return fail('You do not have permission to change this status.', epoch);
 
@@ -353,7 +354,7 @@ export async function updateTimelineFilePriorityAction(
     meRow &&
     (meRow.isSuperAdmin ||
       meRow.hierarchySlot === 'osd' ||
-      (meRow.hierarchySlot === 'director' &&
+      (isDirectorGrade(meRow.hierarchySlot) &&
         meRow.divisionId === tf.createdBy.divisionId));
   if (!allowed) return fail('You do not have permission to change this priority.', epoch);
 
@@ -676,7 +677,7 @@ export async function addMarkedToAction(
     const directors = await prisma.user.findMany({
       where: {
         divisionId: parsed.data.divisionId,
-        hierarchySlot: 'director',
+        hierarchySlot: { in: [...DIRECTOR_GRADE_SLOTS] },
         isActive: true,
         id: { not: guard.userId },
       },

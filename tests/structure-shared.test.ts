@@ -3,10 +3,12 @@ import { describe, expect, it } from 'vitest';
 import {
   allowedParentKinds,
   expandHeadedToDescendants,
+  groupDivisionsByOrganization,
   isStructuralKind,
   isTaskBoardKind,
   organizationOf,
   STRUCTURE_KINDS,
+  type NamedStructureNode,
   type StructureTreeNode,
 } from '@/lib/structure-shared';
 
@@ -178,5 +180,100 @@ describe('kind predicates', () => {
       'section',
       'pmu',
     ]);
+  });
+});
+
+describe('groupDivisionsByOrganization — the user form pickers', () => {
+  // The shape in production on 2026-09-22: the ministry, and SAI with two
+  // regional centres that each run divisions of the SAME names. Input order is
+  // what the pages pass: kind, then display order, then name.
+  function named(
+    id: string,
+    name: string,
+    kind: StructureTreeNode['kind'],
+    parentId: string | null,
+    pmuParentDivisionId: string | null = null,
+  ): NamedStructureNode {
+    return { id, name, kind, parentId, pmuParentDivisionId };
+  }
+  const ORGS: NamedStructureNode[] = [
+    named('HQ', 'Ministry Headquarter', 'organization', null),
+    named('SAI', 'SAI', 'organization', null),
+    named('EMPTY', 'New organization', 'organization', null),
+    named('RC_S', 'RC South', 'directorate', 'SAI'),
+    named('RC_N', 'RC North', 'directorate', 'SAI'),
+    named('NSDF', 'NSDF', 'division', 'HQ'),
+    // RC North's division comes first here, so the test below proves groups
+    // follow the directorates' order, not the order divisions turn up in.
+    named('NCOE_N', 'NCOE', 'division', 'RC_N'),
+    named('INFRA', 'Infrastructure', 'division', 'SAI'),
+    named('NCOE_S', 'NCOE', 'division', 'RC_S'),
+    named('KIS', 'Khelo India Scheme', 'division', 'HQ'),
+    named('STC_N', 'STC', 'division', 'RC_N'),
+    named('OPS', 'Operations', 'division', 'SAI'),
+    named('KIS_SUB', 'Coaching', 'sub_division', 'KIS'),
+    named('KIS_PMU', 'KIS_PMU', 'pmu', null, 'KIS'),
+  ];
+
+  const result = groupDivisionsByOrganization(ORGS);
+  const byName = (name: string) => result.find((o) => o.organization?.name === name)!;
+  const shape = (name: string) =>
+    byName(name).groups.map((g) => ({
+      under: g.path.map((p) => p.name),
+      divisions: g.divisions.map((d) => d.id),
+    }));
+
+  it('lists every organization, in input order — even one with no divisions yet', () => {
+    expect(result.map((o) => o.organization?.id)).toEqual(['HQ', 'SAI', 'EMPTY']);
+    expect(byName('New organization')).toEqual({
+      organization: { id: 'EMPTY', name: 'New organization' },
+      groups: [],
+      divisionCount: 0,
+    });
+  });
+
+  it('keeps an organization without directorates to one flat group', () => {
+    expect(shape('Ministry Headquarter')).toEqual([{ under: [], divisions: ['NSDF', 'KIS'] }]);
+    expect(byName('Ministry Headquarter').divisionCount).toBe(2);
+  });
+
+  it('tells same-named divisions apart by the directorate they sit in', () => {
+    // Direct divisions first, then the directorates in THEIR input order
+    // (RC South before RC North), not in the order their divisions appeared.
+    expect(shape('SAI')).toEqual([
+      { under: [], divisions: ['INFRA', 'OPS'] },
+      { under: ['RC South'], divisions: ['NCOE_S'] },
+      { under: ['RC North'], divisions: ['NCOE_N', 'STC_N'] },
+    ]);
+    expect(byName('SAI').divisionCount).toBe(5);
+  });
+
+  it('groups only divisions — never sub-divisions, sections or PMUs', () => {
+    const ids = result.flatMap((o) => o.groups.flatMap((g) => g.divisions.map((d) => d.id)));
+    expect(ids).not.toContain('KIS_SUB');
+    expect(ids).not.toContain('KIS_PMU');
+    expect(sorted(ids)).toEqual(sorted(['NSDF', 'KIS', 'NCOE_S', 'INFRA', 'NCOE_N', 'STC_N', 'OPS']));
+  });
+
+  it('collects a division outside any organization, last, rather than dropping it', () => {
+    const withLegacy = groupDivisionsByOrganization([
+      ...ORGS,
+      named('LEGACY', 'Legacy root', 'division', null),
+      named('BROKEN', 'Broken chain', 'division', 'GONE'),
+    ]);
+    const last = withLegacy[withLegacy.length - 1];
+    expect(last.organization).toBeNull();
+    expect(last.groups.flatMap((g) => g.divisions.map((d) => d.id))).toEqual(['LEGACY', 'BROKEN']);
+  });
+
+  it('survives a cycle in the parent chain', () => {
+    const cyclic = groupDivisionsByOrganization([
+      named('A', 'Loop A', 'directorate', 'B'),
+      named('B', 'Loop B', 'directorate', 'A'),
+      named('D', 'Stuck', 'division', 'A'),
+    ]);
+    expect(cyclic).toHaveLength(1);
+    expect(cyclic[0].organization).toBeNull();
+    expect(cyclic[0].divisionCount).toBe(1);
   });
 });
