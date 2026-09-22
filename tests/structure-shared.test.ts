@@ -3,10 +3,12 @@ import { describe, expect, it } from 'vitest';
 import {
   allowedParentKinds,
   expandHeadedToDescendants,
+  groupByPlacement,
   groupDivisionsByOrganization,
   isStructuralKind,
   isTaskBoardKind,
   organizationOf,
+  placementOf,
   STRUCTURE_KINDS,
   type NamedStructureNode,
   type StructureTreeNode,
@@ -275,5 +277,80 @@ describe('groupDivisionsByOrganization — the user form pickers', () => {
     expect(cyclic).toHaveLength(1);
     expect(cyclic[0].organization).toBeNull();
     expect(cyclic[0].divisionCount).toBe(1);
+  });
+});
+
+describe('groupByPlacement / placementOf — Quick Create targets', () => {
+  function named(
+    id: string,
+    name: string,
+    kind: StructureTreeNode['kind'],
+    parentId: string | null,
+    pmuParentDivisionId: string | null = null,
+  ): NamedStructureNode {
+    return { id, name, kind, parentId, pmuParentDivisionId };
+  }
+  const NODES: NamedStructureNode[] = [
+    named('HQ', 'Ministry Headquarter', 'organization', null),
+    named('SAI', 'SAI', 'organization', null),
+    named('EMPTY', 'New organization', 'organization', null),
+    named('RC_B', 'RC Bangalore', 'directorate', 'SAI'),
+    named('RC_I', 'RC Imphal', 'directorate', 'SAI'),
+    named('OJS', 'Office of JS', 'division', 'HQ'),
+    named('KIS', 'Khelo India Scheme', 'division', 'HQ'),
+    named('NCOE_B', 'NCOE', 'division', 'RC_B'),
+    named('NCOE_I', 'NCOE', 'division', 'RC_I'),
+    named('OPS', 'Operations', 'division', 'SAI'),
+    // A PMU by pmu_parent_division_id, and one by the parent_id fallback.
+    named('KIS_PMU', 'KIS_PMU', 'pmu', null, 'KIS'),
+    named('NCOE_PMU', 'NCOE_PMU', 'pmu', 'NCOE_I'),
+  ];
+
+  it('places a PMU wherever its parent division sits', () => {
+    expect(placementOf('KIS_PMU', NODES)).toEqual({
+      organization: { id: 'HQ', name: 'Ministry Headquarter' },
+      path: [],
+    });
+    expect(placementOf('NCOE_PMU', NODES)).toEqual({
+      organization: { id: 'SAI', name: 'SAI' },
+      path: [{ id: 'RC_I', name: 'RC Imphal' }],
+    });
+  });
+
+  it('places a division by the containers above it', () => {
+    expect(placementOf('NCOE_B', NODES).path).toEqual([{ id: 'RC_B', name: 'RC Bangalore' }]);
+    expect(placementOf('OPS', NODES)).toEqual({ organization: { id: 'SAI', name: 'SAI' }, path: [] });
+    expect(placementOf('MISSING', NODES)).toEqual({ organization: null, path: [] });
+  });
+
+  it('lists only organizations holding a target, units in the order given', () => {
+    // Divisions first, then PMUs — the order Quick Create passes.
+    const targets = ['OJS', 'KIS', 'NCOE_B', 'NCOE_I', 'KIS_PMU', 'NCOE_PMU'].map((id) => ({ id }));
+    const grouped = groupByPlacement(targets, NODES);
+    expect(grouped.map((o) => o.organization?.id)).toEqual(['HQ', 'SAI']);
+    expect(
+      grouped.map((o) => o.groups.map((g) => [g.path.map((p) => p.name), g.units.map((u) => u.id)])),
+    ).toEqual([
+      [[[], ['OJS', 'KIS', 'KIS_PMU']]],
+      [
+        [['RC Bangalore'], ['NCOE_B']],
+        [['RC Imphal'], ['NCOE_I', 'NCOE_PMU']],
+      ],
+    ]);
+    expect(grouped.map((o) => o.unitCount)).toEqual([3, 3]);
+  });
+
+  it('a caller confined to one directorate gets one organization with one group', () => {
+    const grouped = groupByPlacement([{ id: 'NCOE_B' }], NODES);
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0].organization?.name).toBe('SAI');
+    expect(grouped[0].groups.map((g) => g.path.map((p) => p.name))).toEqual([['RC Bangalore']]);
+  });
+
+  it('lists empty organizations only when asked to', () => {
+    expect(groupByPlacement([], NODES)).toEqual([]);
+    expect(
+      groupByPlacement([], NODES, { includeEmptyOrganizations: true }).map((o) => o.organization?.id),
+    ).toEqual(['HQ', 'SAI', 'EMPTY']);
   });
 });

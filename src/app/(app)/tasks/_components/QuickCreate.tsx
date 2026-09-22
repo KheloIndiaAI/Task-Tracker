@@ -83,6 +83,24 @@ export type OwnerCandidate = {
 /** The OSD account — a quick-pick owner on Office-of-JS tasks. */
 export type OsdAccount = { id: string; name: string };
 
+/**
+ * Where the create targets sit, for the Organization → Directorate → Division
+ * pickers. Built on the server from the same targets (groupByPlacement), so it
+ * only ever holds organizations and directorates the caller can create in.
+ */
+export type TargetOrganization = {
+  /** The organization's id, or '__none__' for targets outside any organization. */
+  key: string;
+  name: string;
+  groups: {
+    key: string;
+    /** The directorate these targets sit in; null when directly under the organization. */
+    directorate: string | null;
+    /** The targets here, in display order: divisions, then PMU teams. */
+    targetIds: string[];
+  }[];
+};
+
 type ProviderProps = {
   defaultDivisionId: string;
   s3Configured: boolean;
@@ -93,6 +111,8 @@ type ProviderProps = {
   ownerCandidates: OwnerCandidate[];
   /** OSD account, for the quick-pick pill on Office-of-JS tasks. */
   osdAccount: OsdAccount | null;
+  /** The same targets by organization and directorate — see TargetOrganization. */
+  targetGroups: TargetOrganization[];
   children: ReactNode;
 };
 
@@ -102,6 +122,7 @@ export function QuickCreateProvider({
   createTargets,
   ownerCandidates,
   osdAccount,
+  targetGroups,
   children,
 }: ProviderProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -125,6 +146,7 @@ export function QuickCreateProvider({
             createTargets={createTargets}
             ownerCandidates={ownerCandidates}
             osdAccount={osdAccount}
+            targetGroups={targetGroups}
             prefillDueDate={prefill?.dueDate}
           />
         ) : null}
@@ -162,9 +184,14 @@ type FormProps = {
   createTargets: DivisionTarget[];
   ownerCandidates: OwnerCandidate[];
   osdAccount: OsdAccount | null;
+  targetGroups: TargetOrganization[];
   /** Prefilled due date (YYYY-MM-DD), e.g. when created from the calendar. */
   prefillDueDate?: string;
 };
+
+/** The target pickers. A picker with one choice is locked, not hidden. */
+const TARGET_SELECT =
+  'w-full px-3 py-2.5 rounded-lg border border-line bg-panel text-[14px] text-ink outline-none focus:border-ink appearance-none disabled:bg-bg disabled:text-ink-2 disabled:opacity-100';
 
 const PRIORITIES = [
   { value: 'low', label: 'Low', tone: 'text-low' },
@@ -180,6 +207,7 @@ function QuickCreateForm({
   createTargets,
   ownerCandidates,
   osdAccount,
+  targetGroups,
   prefillDueDate,
 }: FormProps) {
   const formRef = useRef<HTMLFormElement>(null);
@@ -191,13 +219,37 @@ function QuickCreateForm({
 
   const [priority, setPriority] = useState<(typeof PRIORITIES)[number]['value']>('low');
   // Which division/PMU the task lands on — ownership auto-resolves to that
-  // division's head or the PMU's team leader on the server. Default to the
-  // caller's own division when it's a valid target, else the first.
-  const [divisionId, setDivisionId] = useState(
-    createTargets.some((t) => t.id === defaultDivisionId)
-      ? defaultDivisionId
-      : createTargets[0]?.id ?? defaultDivisionId,
+  // division's head or the PMU's team leader on the server. Prefilled from
+  // where the caller sits (their home division, or a PMU member's PMU) when
+  // that is a valid target, else the first.
+  const initialTargetId = createTargets.some((t) => t.id === defaultDivisionId)
+    ? defaultDivisionId
+    : createTargets[0]?.id ?? defaultDivisionId;
+  const [divisionId, setDivisionId] = useState(initialTargetId);
+  // Organization, then directorate — the pickers in front of the target. Both
+  // open on wherever the prefilled target sits.
+  const placeOf = (targetId: string) => {
+    for (const o of targetGroups) {
+      for (const g of o.groups) {
+        if (g.targetIds.includes(targetId)) return { orgKey: o.key, groupKey: g.key };
+      }
+    }
+    return null;
+  };
+  const [orgKey, setOrgKey] = useState(
+    () => placeOf(initialTargetId)?.orgKey ?? targetGroups[0]?.key ?? '',
   );
+  const [groupKey, setGroupKey] = useState(
+    () => placeOf(initialTargetId)?.groupKey ?? targetGroups[0]?.groups[0]?.key ?? '',
+  );
+  const currentOrg = targetGroups.find((o) => o.key === orgKey) ?? null;
+  const currentGroup = currentOrg?.groups.find((g) => g.key === groupKey) ?? null;
+  // Offered only where the organization is split into directorates — the
+  // ministry is not, so its people see Organization and Division alone.
+  const showDirectorate = !!currentOrg && currentOrg.groups.some((g) => g.directorate !== null);
+  const groupTargets = (currentGroup?.targetIds ?? [])
+    .map((id) => createTargets.find((t) => t.id === id))
+    .filter((t): t is DivisionTarget => t !== undefined);
   // Optional initial owner. Empty = today's default (a division task starts
   // unassigned; a PMU task goes to its team leader — resolved on the server).
   // Cleared whenever the target/visibility changes so a stale cross-division
@@ -302,6 +354,34 @@ function QuickCreateForm({
     }
     setUploadError(null);
     setPendingFile(file);
+  };
+
+  // Every change of target goes through here, so an owner, sub-division or
+  // PMU-share choice made for one board never rides along to another.
+  const selectTarget = (next: string) => {
+    setDivisionId(next);
+    setOwnerId('');
+    setSubDivisionId('');
+    setShareWithPmu(createTargets.find((t) => t.id === next)?.kind === 'pmu');
+  };
+  // A new organization or directorate lands on the caller's own board when it
+  // is there, else on the first one — so a target is always chosen.
+  const preferredIn = (ids: string[]) => (ids.includes(initialTargetId) ? initialTargetId : ids[0]);
+  const chooseOrganization = (key: string) => {
+    const org = targetGroups.find((o) => o.key === key);
+    if (!org) return;
+    const group = org.groups.find((g) => g.targetIds.includes(initialTargetId)) ?? org.groups[0];
+    setOrgKey(key);
+    setGroupKey(group?.key ?? '');
+    const next = group ? preferredIn(group.targetIds) : undefined;
+    if (next) selectTarget(next);
+  };
+  const chooseDirectorate = (key: string) => {
+    const group = currentOrg?.groups.find((g) => g.key === key);
+    if (!group) return;
+    setGroupKey(key);
+    const next = preferredIn(group.targetIds);
+    if (next) selectTarget(next);
   };
 
   // Owner candidates for the selected target: its division/PMU members —
@@ -449,34 +529,68 @@ function QuickCreateForm({
             </div>
           </Field>
 
-          {/* Division / PMU target. A task starts unassigned for any member to
-              pull; a PMU task is owned by its team leader. */}
+          {/* Where the task goes: organization, then directorate, then the
+              division or PMU. Only places the caller can create in are
+              offered, and a picker with a single choice stays on screen,
+              locked, so the caller always sees where the task will land. A
+              task starts unassigned for any member to pull; a PMU task is
+              owned by its team leader. */}
           {createTargets.length > 0 ? (
-            <Field label="Division or PMU">
-              <select
-                value={divisionId}
-                onChange={(e) => {
-                  const next = e.target.value;
-                  setDivisionId(next);
-                  setOwnerId('');
-                  setSubDivisionId('');
-                  setShareWithPmu(
-                    createTargets.find((t) => t.id === next)?.kind === 'pmu',
-                  );
-                }}
-                className="w-full px-3 py-2.5 rounded-lg border border-line bg-panel text-[14px] text-ink outline-none focus:border-ink appearance-none"
-              >
-                {createTargets.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                    {t.kind === 'pmu' ? ' · PMU' : ''}
-                  </option>
-                ))}
-              </select>
-              <p className="mt-1 text-[11px] text-ink-3">
-                Everyone on this board sees the task. Leave the owner below blank and it starts unassigned — any member can pull it to take ownership; a PMU task goes to its team leader.
-              </p>
-            </Field>
+            <>
+              <div className={cn('grid grid-cols-1 gap-3.5', showDirectorate && 'sm:grid-cols-2')}>
+                <Field label="Organization">
+                  <select
+                    value={orgKey}
+                    onChange={(e) => chooseOrganization(e.target.value)}
+                    disabled={targetGroups.length < 2}
+                    aria-label="Organization"
+                    className={TARGET_SELECT}
+                  >
+                    {targetGroups.map((o) => (
+                      <option key={o.key} value={o.key}>
+                        {o.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                {showDirectorate && currentOrg ? (
+                  <Field label="Directorate">
+                    <select
+                      value={groupKey}
+                      onChange={(e) => chooseDirectorate(e.target.value)}
+                      disabled={currentOrg.groups.length < 2}
+                      aria-label="Directorate"
+                      className={TARGET_SELECT}
+                    >
+                      {currentOrg.groups.map((g) => (
+                        <option key={g.key} value={g.key}>
+                          {g.directorate ?? `Directly under ${currentOrg.name}`}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                ) : null}
+              </div>
+              <Field label="Division or PMU">
+                <select
+                  value={divisionId}
+                  onChange={(e) => selectTarget(e.target.value)}
+                  disabled={groupTargets.length < 2}
+                  aria-label="Division or PMU"
+                  className={TARGET_SELECT}
+                >
+                  {groupTargets.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                      {t.kind === 'pmu' ? ' · PMU' : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-[11px] text-ink-3">
+                  Everyone on this board sees the task. Leave the owner below blank and it starts unassigned — any member can pull it to take ownership; a PMU task goes to its team leader.
+                </p>
+              </Field>
+            </>
           ) : null}
 
           {/* Sub-division (optional) — shown only when the chosen division has

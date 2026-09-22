@@ -174,6 +174,135 @@ export function expandHeadedToDescendants(
 /** A tree node plus the name the pickers show. */
 export type NamedStructureNode = StructureTreeNode & { name: string };
 
+/** Where a unit sits: its organization and the containers in between. */
+export type UnitPlacement = {
+  /** `null` when the chain reaches no organization (a legacy root, a broken chain). */
+  organization: { id: string; name: string } | null;
+  /**
+   * The containers between the organization and the unit's division, top
+   * down: empty for a division directly under its organization,
+   * `[RC Bengaluru]` for one inside that directorate.
+   */
+  path: { id: string; name: string }[];
+};
+
+/**
+ * Where a division or PMU team sits. A PMU sits wherever its parent division
+ * does (pmu_parent_division_id, falling back to parent_id) — it is placed
+ * with that division, never on its own. Cycle-safe.
+ */
+export function placementOf(
+  unitId: string,
+  nodes: readonly NamedStructureNode[],
+): UnitPlacement {
+  return placeIn(new Map(nodes.map((n) => [n.id, n])), unitId);
+}
+
+/** placementOf over a prebuilt id map — so a batch builds the map once. */
+function placeIn(byId: ReadonlyMap<string, NamedStructureNode>, unitId: string): UnitPlacement {
+  const unit = byId.get(unitId);
+  // A PMU is placed through its division; everything else from itself.
+  const anchor = unit && unit.kind === 'pmu' ? byId.get(parentOf(unit) ?? '') : unit;
+  const path: { id: string; name: string }[] = [];
+  if (!anchor) return { organization: null, path };
+
+  const seen = new Set<string>([anchor.id]);
+  let up = parentOf(anchor);
+  while (up && !seen.has(up)) {
+    seen.add(up);
+    const p = byId.get(up);
+    if (!p) break;
+    if (p.kind === 'organization') return { organization: { id: p.id, name: p.name }, path };
+    path.unshift({ id: p.id, name: p.name });
+    up = parentOf(p);
+  }
+  return { organization: null, path };
+}
+
+/** Units that share one place in the tree. */
+export type PlacedGroup<T> = {
+  /** Stable key for lists and pickers. */
+  key: string;
+  /** See UnitPlacement.path — empty means directly under the organization. */
+  path: { id: string; name: string }[];
+  units: T[];
+};
+
+export type PlacedOrganization<T> = {
+  /** `null` collects units that sit in no organization; always listed last. */
+  organization: { id: string; name: string } | null;
+  /** Directly under the organization first, then each directorate. */
+  groups: PlacedGroup<T>[];
+  unitCount: number;
+};
+
+/**
+ * Units grouped by the organization they sit in, then by the directorate(s)
+ * above them — one grouping for every picker that must tell apart two
+ * divisions both called "NCOE". Pass the units in display order; they keep it
+ * inside their group.
+ *
+ * Organizations follow the tree's input order (callers pass it sorted by
+ * kind, display order and name). With `includeEmptyOrganizations` every
+ * organization is listed, even with no units — the user form offers one
+ * before its first division exists; without it only organizations holding a
+ * unit appear — Quick Create offers only where the caller may create.
+ * Directorate groups follow the directorates' own tree order.
+ */
+export function groupByPlacement<T extends { id: string }>(
+  units: readonly T[],
+  nodes: readonly NamedStructureNode[],
+  opts: { includeEmptyOrganizations?: boolean } = {},
+): PlacedOrganization<T>[] {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const order = new Map(nodes.map((n, i) => [n.id, i]));
+  const rank = (id: string) => order.get(id) ?? Number.MAX_SAFE_INTEGER;
+
+  const byOrg = new Map<string | null, PlacedOrganization<T>>();
+  const orgOrder: (string | null)[] = [];
+  for (const n of nodes) {
+    if (n.kind !== 'organization') continue;
+    byOrg.set(n.id, { organization: { id: n.id, name: n.name }, groups: [], unitCount: 0 });
+    orgOrder.push(n.id);
+  }
+
+  for (const unit of units) {
+    const { organization, path } = placeIn(byId, unit.id);
+    const orgId = organization?.id ?? null;
+    let entry = byOrg.get(orgId);
+    if (!entry) {
+      entry = { organization: null, groups: [], unitCount: 0 };
+      byOrg.set(orgId, entry);
+      orgOrder.push(orgId);
+    }
+    const key = `${orgId ?? 'none'}:${path.map((p) => p.id).join('/')}`;
+    let group = entry.groups.find((g) => g.key === key);
+    if (!group) {
+      group = { key, path, units: [] };
+      entry.groups.push(group);
+    }
+    group.units.push(unit);
+    entry.unitCount += 1;
+  }
+
+  const result: PlacedOrganization<T>[] = [];
+  for (const id of orgOrder) {
+    const entry = byOrg.get(id)!;
+    if (entry.unitCount === 0 && !opts.includeEmptyOrganizations) continue;
+    // Direct units first, then directorates in their own tree order.
+    entry.groups.sort((a, b) => {
+      const len = Math.min(a.path.length, b.path.length);
+      for (let i = 0; i < len; i += 1) {
+        const diff = rank(a.path[i].id) - rank(b.path[i].id);
+        if (diff !== 0) return diff;
+      }
+      return a.path.length - b.path.length;
+    });
+    result.push(entry);
+  }
+  return result;
+}
+
 /** Divisions that share one place in the tree. */
 export type DivisionGroup = {
   /** Stable key for lists. */
@@ -200,78 +329,20 @@ export type OrganizationDivisions = {
  * directorate(s) above it — what the user form needs to tell apart three
  * divisions all called "NCOE".
  *
- * Organizations come in input order (callers pass the tree sorted by kind,
- * display order and name) and are listed even with no divisions yet, so one
- * can be chosen before its first division exists. Directorate groups follow
- * the directorates' own input order; divisions keep input order inside their
- * group. Only `division` rows are grouped — sub-divisions, sections and PMUs
- * are placed through their division. Cycle-safe.
+ * Every organization is listed, even with no divisions yet, so one can be
+ * chosen before its first division exists. Only `division` rows are grouped —
+ * sub-divisions, sections and PMUs are placed through their division. A thin
+ * view over groupByPlacement.
  */
 export function groupDivisionsByOrganization(
   nodes: readonly NamedStructureNode[],
 ): OrganizationDivisions[] {
-  const byId = new Map(nodes.map((n) => [n.id, n]));
-  const order = new Map(nodes.map((n, i) => [n.id, i]));
-
-  const result: OrganizationDivisions[] = [];
-  const byOrg = new Map<string | null, OrganizationDivisions>();
-  for (const n of nodes) {
-    if (n.kind !== 'organization') continue;
-    const entry: OrganizationDivisions = {
-      organization: { id: n.id, name: n.name },
-      groups: [],
-      divisionCount: 0,
-    };
-    byOrg.set(n.id, entry);
-    result.push(entry);
-  }
-
-  for (const d of nodes) {
-    if (d.kind !== 'division') continue;
-    // Walk up to the organization, collecting the containers passed on the way.
-    const path: { id: string; name: string }[] = [];
-    const seen = new Set<string>([d.id]);
-    let orgId: string | null = null;
-    let up = parentOf(d);
-    while (up && !seen.has(up)) {
-      seen.add(up);
-      const p = byId.get(up);
-      if (!p) break;
-      if (p.kind === 'organization') {
-        orgId = p.id;
-        break;
-      }
-      path.unshift({ id: p.id, name: p.name });
-      up = parentOf(p);
-    }
-
-    let entry = byOrg.get(orgId);
-    if (!entry) {
-      entry = { organization: null, groups: [], divisionCount: 0 };
-      byOrg.set(orgId, entry);
-      result.push(entry);
-    }
-    const key = `${orgId ?? 'none'}:${path.map((p) => p.id).join('/')}`;
-    let group = entry.groups.find((g) => g.key === key);
-    if (!group) {
-      group = { key, path, divisions: [] };
-      entry.groups.push(group);
-    }
-    group.divisions.push({ id: d.id, name: d.name });
-    entry.divisionCount += 1;
-  }
-
-  // Direct divisions first, then directorates in their own tree order.
-  const rank = (id: string) => order.get(id) ?? Number.MAX_SAFE_INTEGER;
-  for (const entry of result) {
-    entry.groups.sort((a, b) => {
-      const len = Math.min(a.path.length, b.path.length);
-      for (let i = 0; i < len; i += 1) {
-        const diff = rank(a.path[i].id) - rank(b.path[i].id);
-        if (diff !== 0) return diff;
-      }
-      return a.path.length - b.path.length;
-    });
-  }
-  return result;
+  const divisions = nodes
+    .filter((n) => n.kind === 'division')
+    .map((n) => ({ id: n.id, name: n.name }));
+  return groupByPlacement(divisions, nodes, { includeEmptyOrganizations: true }).map((o) => ({
+    organization: o.organization,
+    groups: o.groups.map((g) => ({ key: g.key, path: g.path, divisions: g.units })),
+    divisionCount: o.unitCount,
+  }));
 }

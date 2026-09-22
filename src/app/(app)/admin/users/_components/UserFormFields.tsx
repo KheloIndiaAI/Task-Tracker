@@ -141,6 +141,25 @@ export function UserFormFields({
       : '';
   const [orgKey, setOrgKey] = useState(initialOrgKey);
   const currentOrg = orgGroups.find((o) => orgKeyOf(o) === orgKey) ?? null;
+  // Then the directorate — or "directly under" the organization — which
+  // narrows Division to the divisions sitting there. Editing opens on the home
+  // division's place; an organization with a single place picks it itself.
+  const [groupKey, setGroupKey] = useState(() => {
+    const org = orgGroups.find((o) => orgKeyOf(o) === initialOrgKey);
+    if (!org) return '';
+    const home = defaults?.divisionId
+      ? org.groups.find((g) => g.divisions.some((d) => d.id === defaults.divisionId))
+      : undefined;
+    return home?.key ?? (org.groups.length === 1 ? org.groups[0].key : '');
+  });
+  // Offered only where the organization is split into directorates — the
+  // ministry is not, so it goes straight from Organization to Division.
+  const orgHasDirectorates = !!currentOrg && currentOrg.groups.some((g) => g.path.length > 0);
+  const currentGroup = currentOrg
+    ? orgHasDirectorates
+      ? currentOrg.groups.find((g) => g.key === groupKey) ?? null
+      : currentOrg.groups[0] ?? null
+    : null;
   const [divisionId, setDivisionId] = useState(defaults?.divisionId ?? '');
   const [subDivisionId, setSubDivisionId] = useState(defaults?.subDivisionId ?? '');
   const [sectionId, setSectionId] = useState(defaults?.sectionId ?? '');
@@ -396,7 +415,10 @@ export function UserFormFields({
               onChange={(e) => {
                 const value = e.target.value;
                 setOrgKey(value);
-                // A division of the previous organization no longer applies.
+                // A directorate or division of the previous organization no
+                // longer applies. A single place is picked straight away.
+                const org = orgGroups.find((o) => orgKeyOf(o) === value);
+                setGroupKey(org && org.groups.length === 1 ? org.groups[0].key : '');
                 setDivisionId('');
                 setSubDivisionId('');
                 setSectionId('');
@@ -416,6 +438,32 @@ export function UserFormFields({
               ))}
             </select>
           </Field>
+          {orgHasDirectorates && currentOrg ? (
+            <Field label="Directorate">
+              <select
+                value={groupKey}
+                onChange={(e) => {
+                  setGroupKey(e.target.value);
+                  // A division from another directorate no longer applies.
+                  setDivisionId('');
+                  setSubDivisionId('');
+                  setSectionId('');
+                  setPmuId('');
+                }}
+                required
+                className={selectCn(false)}
+              >
+                <option value="" disabled>
+                  Choose a directorate…
+                </option>
+                {currentOrg.groups.map((g) => (
+                  <option key={g.key} value={g.key}>
+                    {groupLabel(g, orgNameOf(currentOrg))}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ) : null}
           <Field
             label="Division"
             error={fieldErrors?.divisionId}
@@ -442,13 +490,23 @@ export function UserFormFields({
                 });
               }}
               required
-              disabled={!currentOrg}
+              disabled={!currentGroup}
               className={selectCn(!!fieldErrors?.divisionId)}
             >
               <option value="" disabled>
-                {currentOrg ? 'Choose a division…' : 'Choose an organization first'}
+                {!currentOrg
+                  ? 'Choose an organization first'
+                  : currentOrg.divisionCount === 0
+                    ? 'No divisions yet'
+                    : !currentGroup
+                      ? 'Choose a directorate first'
+                      : 'Choose a division…'}
               </option>
-              {currentOrg ? divisionOptions(currentOrg) : null}
+              {(currentGroup?.divisions ?? []).map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
             </select>
           </Field>
           <Field
@@ -693,34 +751,6 @@ export function UserFormFields({
 // ------------------------------------------------------------
 // Sub-components
 // ------------------------------------------------------------
-
-/**
- * The Division picker's options for one organization: a plain list when it has
- * no directorates (the ministry today), otherwise one group per place —
- * "Directly under SAI", "RC Bengaluru" — so same-named divisions are told
- * apart by where they sit.
- */
-function divisionOptions(org: OrganizationDivisions) {
-  const orgName = orgNameOf(org);
-  if (org.groups.every((g) => g.path.length === 0)) {
-    return org.groups
-      .flatMap((g) => g.divisions)
-      .map((d) => (
-        <option key={d.id} value={d.id}>
-          {d.name}
-        </option>
-      ));
-  }
-  return org.groups.map((g) => (
-    <optgroup key={g.key} label={groupLabel(g, orgName)}>
-      {g.divisions.map((d) => (
-        <option key={d.id} value={d.id}>
-          {d.name}
-        </option>
-      ))}
-    </optgroup>
-  ));
-}
 
 function Section({
   title,

@@ -11,11 +11,13 @@ import { canAccessBusinessCards as canAccessBusinessCardsShared } from '@/lib/bu
 import { canAccessTimelineFiles } from '@/lib/timeline-files-access';
 import { getHeadedDivisionIds, getMemberDivisionIds } from '@/lib/rbac';
 import { getPmusByParentDivision } from '@/lib/visibility';
+import { groupByPlacement } from '@/lib/structure-shared';
 import { isS3Configured } from '@/lib/s3';
 
 import {
   QuickCreateFab,
   QuickCreateProvider,
+  type TargetOrganization,
 } from './tasks/_components/QuickCreate';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -160,7 +162,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // switch in Quick Create appears only for a division that has one. Resolved
   // by the shared helper so `pmu_parent_division_id` and the `parent_id`
   // fallback are honoured the same way everywhere else honours them.
-  const pmusByDivision = await getPmusByParentDivision(divisionTargetIds);
+  const [pmusByDivision, structureNodes] = await Promise.all([
+    getPmusByParentDivision(divisionTargetIds),
+    // The whole tree (small: tens to hundreds of rows) — where each target sits,
+    // so Quick Create can ask Organization, then Directorate, then Division.
+    createTargetsRaw.length > 0
+      ? prisma.division.findMany({
+          select: { id: true, name: true, kind: true, parentId: true, pmuParentDivisionId: true },
+          orderBy: [{ kind: 'asc' }, { displayOrder: 'asc' }, { name: 'asc' }],
+        })
+      : Promise.resolve([]),
+  ]);
 
   const pmuLeadByPmu = new Map(
     candidatesRaw
@@ -187,6 +199,23 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       pmuNames: (pmusByDivision.get(t.id) ?? []).map((p) => p.name),
     };
   });
+
+  // The same targets, placed: organization, then directorate (or directly
+  // under the organization), then the targets themselves in the order above
+  // (divisions, then PMU teams). Only organizations holding a target appear,
+  // so nobody is offered an organization they cannot create in.
+  const targetGroups: TargetOrganization[] = groupByPlacement(
+    createTargets.map((t) => ({ id: t.id })),
+    structureNodes,
+  ).map((o) => ({
+    key: o.organization?.id ?? '__none__',
+    name: o.organization?.name ?? 'Not in an organization',
+    groups: o.groups.map((g) => ({
+      key: g.key,
+      directorate: g.path.length > 0 ? g.path.map((p) => p.name).join(' › ') : null,
+      targetIds: g.units.map((u) => u.id),
+    })),
+  }));
 
   // The OSD account — a one-click pill on Office-of-JS tasks (present in the
   // pool whenever OJS is targetable, since that widens it to everyone).
@@ -244,7 +273,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       notifications={{ unreadCount, recent }}
     >
       <QuickCreateProvider
-        defaultDivisionId={me.divisionId}
+        // Prefilled from where the person sits: their home division — or, for a
+        // PMU member, their PMU, which is the board they create on (see
+        // ownTargetIds above).
+        defaultDivisionId={isPmuMember ? (me.pmuId as string) : me.divisionId}
+        targetGroups={targetGroups}
         s3Configured={isS3Configured()}
         createTargets={createTargets}
         ownerCandidates={ownerCandidates}
