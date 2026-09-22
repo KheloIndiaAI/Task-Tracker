@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server';
 import type { Prisma } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
+import { DIRECTOR_GRADE_SLOTS } from '@/lib/hierarchy-slots';
 
 /**
  * GET /api/cron/due-notifications
@@ -99,7 +100,7 @@ export async function GET(request: Request) {
     ? await prisma.user.findMany({
         where: {
           divisionId: { in: tfDivisionIds },
-          hierarchySlot: 'director',
+          hierarchySlot: { in: [...DIRECTOR_GRADE_SLOTS] },
           isActive: true,
         },
         select: { id: true, divisionId: true },

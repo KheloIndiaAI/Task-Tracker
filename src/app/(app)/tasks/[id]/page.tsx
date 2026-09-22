@@ -24,6 +24,7 @@ import { buildVisibilityClauses, getPmusByParentDivision, visibilityAnd } from '
 import { getPmuTeamMemberIds, isElevatedOverDivision } from '@/lib/pmu-team';
 import { buildTaskParticipantWhere } from '@/lib/task-participants';
 import { canAccessTimelineFiles } from '@/lib/timeline-files-access';
+import { isDirectorGrade } from '@/lib/hierarchy-slots';
 import { CollaboratorsSection, type Candidate, type CollaboratorRow, type SubtaskScope } from './_components/CollaboratorsSection';
 import { JsLanePicker } from './_components/JsLanePicker';
 import { TagsSection, type TaskTagRow } from './_components/TagsSection';
@@ -250,13 +251,14 @@ export default async function TaskDetailPage({ params }: PageProps) {
   // Redefining the task — name, due date, recurrence — is stricter: a normal
   // owner (e.g. after a transfer) cannot. Mirrors canEditTaskDetails on the
   // server: whoever CREATED the task defined it and keeps the right to correct
-  // it. A Director who is a member (home or admin-granted extra) of the task's
+  // it. A Director-grade officer (Director, Regional Director or Assistant
+  // Director) who is a member (home or admin-granted extra) of the task's
   // division may redefine it too.
   const canEditDetails =
     session.user.isSuperAdmin ||
     session.user.hierarchySlot === 'osd' ||
     session.user.hierarchySlot === 'js' ||
-    (session.user.hierarchySlot === 'director' && memberDivisionIds.includes(task.divisionId)) ||
+    (isDirectorGrade(session.user.hierarchySlot) && memberDivisionIds.includes(task.divisionId)) ||
     isHeadOfTaskDivision ||
     task.createdById === session.user.id;
 

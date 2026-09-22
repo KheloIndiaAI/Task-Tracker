@@ -35,6 +35,12 @@ enum HierarchySlot {
   // `consultant` is an unranked support role.
   consultant
   hmyas
+  // Sports Authority of India grades (2026-09-22). Both carry exactly the
+  // Director's slot powers (isDirectorGrade in src/lib/hierarchy-slots.ts);
+  // rank: Regional Director with Director, Assistant Director with Under
+  // Secretary.
+  regional_director
+  assistant_director
 }
 
 enum ContractRole {

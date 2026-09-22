@@ -12,18 +12,22 @@ Define these as Postgres `CREATE TYPE … AS ENUM(…)` so values are validated 
 Permission-bearing ladder. Slot governs what a user can see; designation is the human-readable title.
 
 ```
-'js' | 'osd' | 'director' | 'deputy_secretary' | 'under_secretary' | 'section_officer' | 'aso'
+'hmyas' | 'js' | 'osd' | 'director' | 'regional_director' | 'deputy_secretary' | 'under_secretary'
+  | 'assistant_director' | 'section_officer' | 'aso' | 'consultant'
 ```
 
-Mapping to level number (used in inspector "Level N of 7"):
+Mapping to level number (used in inspector "Level N of 7"; `consultant` is unranked). Levels may be shared — the Sports Authority of India grades added 2026-09-22 sit with their ministry equivalents, and both are Director grade (PERMISSIONS.md §5.21):
 
 | Slot | Level |
 |---|---|
+| `hmyas` | 0 |
 | `js` | 1 |
 | `osd` | 2 |
 | `director` | 3 |
+| `regional_director` | 3 |
 | `deputy_secretary` | 4 |
 | `under_secretary` | 5 |
+| `assistant_director` | 5 |
 | `section_officer` | 6 |
 | `aso` | 7 |
 

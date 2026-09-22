@@ -19,6 +19,7 @@ import {
 } from '@/lib/document-centre';
 import { getPmuTeamMemberIds, isElevatedOverDivision } from '@/lib/pmu-team';
 import { getMemberDivisionIds } from '@/lib/rbac';
+import { isDirectorGrade } from '@/lib/hierarchy-slots';
 import { isTaskContributor } from '@/lib/task-participants';
 import {
   deleteObject as deleteS3Object,
@@ -161,8 +162,9 @@ export async function canEditTfAttachments(
   });
   if (!me) return false;
   if (me.isSuperAdmin || me.hierarchySlot === 'osd') return true;
-  if (me.hierarchySlot !== 'director') return false;
-  // A Director who is a member (home or admin-granted extra) of any division
+  if (!isDirectorGrade(me.hierarchySlot)) return false;
+  // A Director-grade officer (Director, Regional Director or Assistant
+  // Director) who is a member (home or admin-granted extra) of any division
   // the file is marked to may edit its action documents.
   const memberDivisionIds = await getMemberDivisionIds(callerId);
   const marked = await prisma.timelineFileMarkedTo.findFirst({

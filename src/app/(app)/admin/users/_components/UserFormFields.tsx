@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { Switch } from '@/components/ui';
 import {
@@ -8,7 +8,13 @@ import {
   HIERARCHY_SLOT_LABEL,
 } from '@/lib/labels';
 import { cn } from '@/lib/utils';
-import { organizationOf, type StructureKind } from '@/lib/structure-shared';
+import {
+  groupDivisionsByOrganization,
+  organizationOf,
+  type DivisionGroup,
+  type OrganizationDivisions,
+  type StructureKind,
+} from '@/lib/structure-shared';
 
 /**
  * Shared form fields used inside Create and Edit dialogs.
@@ -68,12 +74,30 @@ const SLOTS: { value: string; label: string }[] = [
   { value: 'js', label: HIERARCHY_SLOT_LABEL.js },
   { value: 'osd', label: HIERARCHY_SLOT_LABEL.osd },
   { value: 'director', label: HIERARCHY_SLOT_LABEL.director },
+  { value: 'regional_director', label: HIERARCHY_SLOT_LABEL.regional_director },
   { value: 'deputy_secretary', label: HIERARCHY_SLOT_LABEL.deputy_secretary },
   { value: 'under_secretary', label: HIERARCHY_SLOT_LABEL.under_secretary },
+  { value: 'assistant_director', label: HIERARCHY_SLOT_LABEL.assistant_director },
   { value: 'section_officer', label: HIERARCHY_SLOT_LABEL.section_officer },
   { value: 'aso', label: HIERARCHY_SLOT_LABEL.aso },
   { value: 'consultant', label: HIERARCHY_SLOT_LABEL.consultant },
 ];
+
+/** Picker value for divisions outside any organization (a legacy root). */
+const NO_ORGANIZATION = '__none__';
+
+function orgKeyOf(o: OrganizationDivisions): string {
+  return o.organization?.id ?? NO_ORGANIZATION;
+}
+
+function orgNameOf(o: OrganizationDivisions): string {
+  return o.organization?.name ?? 'Not in an organization';
+}
+
+/** Where a group of divisions sits inside its organization. */
+function groupLabel(g: DivisionGroup, orgName: string): string {
+  return g.path.length > 0 ? g.path.map((p) => p.name).join(' › ') : `Directly under ${orgName}`;
+}
 
 const CONTRACT_OPTIONS = [
   { value: '', label: '— None —' },
@@ -90,11 +114,34 @@ export function UserFormFields({
   fieldErrors,
   identityLocked,
 }: UserFormFieldsProps) {
-  const topDivisions = divisions.filter((d) => d.kind === 'division');
+  // Every division, grouped by organization and then by the directorate it
+  // sits in. The Organization and Division pickers and the Additional
+  // divisions list all read this one grouping, so they cannot disagree — and
+  // two divisions both called "NCOE" are told apart by where they sit.
+  const orgGroups = useMemo(() => groupDivisionsByOrganization(divisions), [divisions]);
+  const orgKeyByDivision = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const o of orgGroups) {
+      for (const g of o.groups) for (const d of g.divisions) map.set(d.id, orgKeyOf(o));
+    }
+    return map;
+  }, [orgGroups]);
   const subDivisionsByParent = (parentId: string) =>
     divisions.filter((d) => d.parentId === parentId && d.kind === 'sub_division');
 
-  const [divisionId, setDivisionId] = useState(defaults?.divisionId ?? topDivisions[0]?.id ?? '');
+  // The Organization picker only narrows the Division list; it is not saved.
+  // A person's organization is always the one their home division sits in, so
+  // editing opens on that one. A new person starts with nothing chosen (unless
+  // there is only one organization), so nobody lands in the wrong one by
+  // default.
+  const initialOrgKey = defaults?.divisionId
+    ? orgKeyByDivision.get(defaults.divisionId) ?? ''
+    : orgGroups.length === 1
+      ? orgKeyOf(orgGroups[0])
+      : '';
+  const [orgKey, setOrgKey] = useState(initialOrgKey);
+  const currentOrg = orgGroups.find((o) => orgKeyOf(o) === orgKey) ?? null;
+  const [divisionId, setDivisionId] = useState(defaults?.divisionId ?? '');
   const [subDivisionId, setSubDivisionId] = useState(defaults?.subDivisionId ?? '');
   const [sectionId, setSectionId] = useState(defaults?.sectionId ?? '');
   const [pmuId, setPmuId] = useState(defaults?.pmuId ?? '');
@@ -109,10 +156,22 @@ export function UserFormFields({
   const [extraDivisionIds, setExtraDivisionIds] = useState<Set<string>>(
     () => new Set(defaults?.extraDivisionIds ?? []),
   );
-
-  // Extra-membership options are the top-level divisions other than the home
-  // division (a division can't be both home and an extra membership).
-  const extraOptions = topDivisions.filter((d) => d.id !== divisionId);
+  // Organizations expanded in Additional divisions: the home one, and any that
+  // already hold a membership, so nothing already selected starts out hidden.
+  const [openOrgs, setOpenOrgs] = useState<Set<string>>(() => {
+    const open = new Set<string>();
+    if (initialOrgKey) open.add(initialOrgKey);
+    for (const id of defaults?.extraDivisionIds ?? []) {
+      const key = orgKeyByDivision.get(id);
+      if (key) open.add(key);
+    }
+    return open;
+  });
+  // A division can't be both home and an extra membership, so the home one is
+  // shown as such rather than offered.
+  const hasExtraOptions = orgGroups.some((o) =>
+    o.groups.some((g) => g.divisions.some((d) => d.id !== divisionId)),
+  );
 
   const subDivisions = divisionId ? subDivisionsByParent(divisionId) : [];
   const sections = subDivisionId
@@ -328,7 +387,44 @@ export function UserFormFields({
       {/* Placement */}
       <Section title="Placement" full>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <Field label="Division" error={fieldErrors?.divisionId}>
+          <Field
+            label="Organization"
+            hint={currentOrg ? undefined : 'Choose one to see its divisions'}
+          >
+            <select
+              value={orgKey}
+              onChange={(e) => {
+                const value = e.target.value;
+                setOrgKey(value);
+                // A division of the previous organization no longer applies.
+                setDivisionId('');
+                setSubDivisionId('');
+                setSectionId('');
+                setPmuId('');
+                setOpenOrgs((prev) => new Set(prev).add(value));
+              }}
+              required
+              className={selectCn(false)}
+            >
+              <option value="" disabled>
+                Choose an organization…
+              </option>
+              {orgGroups.map((o) => (
+                <option key={orgKeyOf(o)} value={orgKeyOf(o)}>
+                  {orgNameOf(o)}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field
+            label="Division"
+            error={fieldErrors?.divisionId}
+            hint={
+              currentOrg && currentOrg.divisionCount === 0
+                ? 'No divisions in this organization yet — add one in Structure & hierarchy'
+                : undefined
+            }
+          >
             <select
               name="divisionId"
               value={divisionId}
@@ -346,16 +442,13 @@ export function UserFormFields({
                 });
               }}
               required
+              disabled={!currentOrg}
               className={selectCn(!!fieldErrors?.divisionId)}
             >
-              {topDivisions.length === 0 ? (
-                <option value="">No divisions yet</option>
-              ) : null}
-              {topDivisions.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
+              <option value="" disabled>
+                {currentOrg ? 'Choose a division…' : 'Choose an organization first'}
+              </option>
+              {currentOrg ? divisionOptions(currentOrg) : null}
             </select>
           </Field>
           <Field
@@ -453,34 +546,125 @@ export function UserFormFields({
           collaborate there, and can group by division — but gains no head powers
           and cannot create division tasks unless they head that division.
         </p>
-        {extraOptions.length === 0 ? (
+        {!hasExtraOptions ? (
           <p className="text-[11px] text-ink-3">No other divisions available.</p>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
-            {extraOptions.map((d) => (
-              <label
-                key={d.id}
-                className="flex items-center gap-2 text-[12.5px] text-ink cursor-pointer"
-              >
-                <input
-                  type="checkbox"
-                  name="extraDivisionIds"
-                  value={d.id}
-                  checked={extraDivisionIds.has(d.id)}
-                  onChange={(e) => {
-                    const checked = e.target.checked;
-                    setExtraDivisionIds((prev) => {
-                      const next = new Set(prev);
-                      if (checked) next.add(d.id);
-                      else next.delete(d.id);
-                      return next;
-                    });
-                  }}
-                  className="h-3.5 w-3.5 rounded border-line accent-ink"
-                />
-                {d.name}
-              </label>
-            ))}
+          <div className="flex flex-col gap-2">
+            {orgGroups
+              .filter((o) => o.divisionCount > 0)
+              .map((o) => {
+                const key = orgKeyOf(o);
+                const orgName = orgNameOf(o);
+                const isOpen = openOrgs.has(key);
+                const isHomeOrg = o.organization !== null && o.organization.id === homeOrgId;
+                const selectedCount = o.groups.reduce(
+                  (n, g) => n + g.divisions.filter((d) => extraDivisionIds.has(d.id)).length,
+                  0,
+                );
+                // Sub-headings only when there is more than one place to tell
+                // apart — an organization with no directorates stays one list.
+                const hasDirectorates = o.groups.some((g) => g.path.length > 0);
+                return (
+                  <details
+                    key={key}
+                    open={isOpen}
+                    onToggle={(e) => {
+                      const open = e.currentTarget.open;
+                      setOpenOrgs((prev) => {
+                        if (prev.has(key) === open) return prev;
+                        const next = new Set(prev);
+                        if (open) next.add(key);
+                        else next.delete(key);
+                        return next;
+                      });
+                    }}
+                    className="rounded-lg border border-line"
+                  >
+                    <summary className="flex cursor-pointer select-none list-none items-center gap-2 px-3 py-2 [&::-webkit-details-marker]:hidden">
+                      <i
+                        className={cn(
+                          'ti ti-chevron-right text-[13px] text-ink-3 transition-transform',
+                          isOpen && 'rotate-90',
+                        )}
+                        aria-hidden="true"
+                      />
+                      <i className="ti ti-building-community text-[14px] text-primary" aria-hidden="true" />
+                      <span className="min-w-0 truncate text-[12.5px] font-medium text-ink">{orgName}</span>
+                      {isHomeOrg ? (
+                        <span className="shrink-0 rounded-md bg-line-2 px-1.5 py-0.5 text-[10px] text-ink-3">
+                          Home organization
+                        </span>
+                      ) : null}
+                      <span className="ml-auto shrink-0 text-[11px] text-ink-3">
+                        {selectedCount > 0 ? `${selectedCount} selected · ` : ''}
+                        {o.divisionCount} {o.divisionCount === 1 ? 'division' : 'divisions'}
+                      </span>
+                    </summary>
+                    <div className="flex flex-col gap-3 border-t border-line-2 px-3 py-3">
+                      {o.groups.map((g) => (
+                        <div key={g.key}>
+                          {hasDirectorates ? (
+                            <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-ink-2">
+                              <i
+                                className={cn(
+                                  'ti text-[13px] text-ink-3',
+                                  g.path.length > 0 ? 'ti-sitemap' : 'ti-building-community',
+                                )}
+                                aria-hidden="true"
+                              />
+                              {groupLabel(g, orgName)}
+                            </p>
+                          ) : null}
+                          <div
+                            className={cn(
+                              'grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2',
+                              hasDirectorates && 'pl-5',
+                            )}
+                          >
+                            {g.divisions.map((d) =>
+                              d.id === divisionId ? (
+                                <span
+                                  key={d.id}
+                                  className="flex min-w-0 items-center gap-2 text-[12.5px] text-ink-3"
+                                >
+                                  <i className="ti ti-home text-[14px] shrink-0" aria-hidden="true" />
+                                  <span className="truncate">{d.name}</span>
+                                  <span className="shrink-0 rounded-md bg-line-2 px-1.5 py-0.5 text-[10px]">
+                                    Home division
+                                  </span>
+                                </span>
+                              ) : (
+                                <label
+                                  key={d.id}
+                                  className="flex items-center gap-2 text-[12.5px] text-ink cursor-pointer"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    name="extraDivisionIds"
+                                    value={d.id}
+                                    checked={extraDivisionIds.has(d.id)}
+                                    onChange={(e) => {
+                                      const checked = e.target.checked;
+                                      setExtraDivisionIds((prev) => {
+                                        const next = new Set(prev);
+                                        if (checked) next.add(d.id);
+                                        else next.delete(d.id);
+                                        return next;
+                                      });
+                                    }}
+                                    className="h-3.5 w-3.5 rounded border-line accent-ink"
+                                  />
+                                  {d.name}
+                                </label>
+                              ),
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                );
+              })}
           </div>
         )}
       </Section>
@@ -509,6 +693,34 @@ export function UserFormFields({
 // ------------------------------------------------------------
 // Sub-components
 // ------------------------------------------------------------
+
+/**
+ * The Division picker's options for one organization: a plain list when it has
+ * no directorates (the ministry today), otherwise one group per place —
+ * "Directly under SAI", "RC Bengaluru" — so same-named divisions are told
+ * apart by where they sit.
+ */
+function divisionOptions(org: OrganizationDivisions) {
+  const orgName = orgNameOf(org);
+  if (org.groups.every((g) => g.path.length === 0)) {
+    return org.groups
+      .flatMap((g) => g.divisions)
+      .map((d) => (
+        <option key={d.id} value={d.id}>
+          {d.name}
+        </option>
+      ));
+  }
+  return org.groups.map((g) => (
+    <optgroup key={g.key} label={groupLabel(g, orgName)}>
+      {g.divisions.map((d) => (
+        <option key={d.id} value={d.id}>
+          {d.name}
+        </option>
+      ))}
+    </optgroup>
+  ));
+}
 
 function Section({
   title,
