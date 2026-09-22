@@ -150,6 +150,7 @@ The app owns this table outright — no separate auth schema. NextAuth's Credent
 | `supervisor_id` | `uuid` | FK → `users.id` | Direct supervisor; null for JS or unassigned officers |
 | `is_active` | `boolean` | NOT NULL, default true | Disabled users keep audit history; sign-in blocked when false (checked in the NextAuth `authorize` callback) |
 | `is_super_admin` | `boolean` | NOT NULL, default false | Same person as OSD initially |
+| `is_organization_head` | `boolean` | NOT NULL, default false | "Organization head" toggle (Super Admin → Users). Head of the organization the home division sits in, with head powers over every division beneath it. See [PERMISSIONS.md §5.20](PERMISSIONS.md) |
 | `force_password_change` | `boolean` | NOT NULL, default false | Set by Super Admin at reset when "Force password change on next login" is ticked. Honoured in the auth callback — blocks any route except the change-password page until cleared |
 | `password_changed_at` | `timestamptz` |  | Written on every successful password change; used to invalidate older JWTs by comparing the token's `iat` |
 | `last_login` | `timestamptz` |  | Written on successful sign-in by the NextAuth `signIn` event |
@@ -172,8 +173,8 @@ A single `divisions` table holds divisions, sub-divisions, sections, and PMUs �
 |---|---|---|---|
 | `id` | `uuid` | PK |  |
 | `name` | `text` | NOT NULL | "Khelo India Mission", "NADA", "KIM PMU", etc. |
-| `parent_id` | `uuid` | FK → `divisions.id` | NULL for top-level divisions; otherwise points up the tree |
-| `kind` | `text` | NOT NULL, CHECK in `('division','sub_division','section','pmu')` | A simple string enum; not declared as a Postgres type because it shifts with structural drag-and-drop |
+| `parent_id` | `uuid` | FK → `divisions.id` | NULL only for an organization; otherwise points up the tree (a division's parent is an organization or a directorate) |
+| `kind` | `DivisionKind` | NOT NULL | Postgres enum, in tree order: `organization`, `directorate`, `division`, `sub_division`, `section`, `pmu`. Only `division` and `pmu` rows carry tasks. See [PERMISSIONS.md §5.20](PERMISSIONS.md) |
 | `has_pmu` | `boolean` | NOT NULL, default false | Only meaningful when `kind = 'division'`. PMU itself sits as a sibling with `kind = 'pmu'` and the same `parent_id` |
 | `pmu_parent_division_id` | `uuid` | FK → `divisions.id` | Only set when `kind = 'pmu'` — the ministry division this PMU supports |
 | `avatar_colour` | `text` | NOT NULL | Hex string; assigned at creation, stable thereafter. See [COLOUR_TOKENS.css](COLOUR_TOKENS.css) §1.4 for seed values |
@@ -182,7 +183,7 @@ A single `divisions` table holds divisions, sub-divisions, sections, and PMUs �
 | `created_at` | `timestamptz` | NOT NULL, default `now()` |  |
 
 **Check constraints:**
-- `(parent_id IS NULL) ⇒ kind = 'division'` (only top-level rows can be divisions)
+- `(parent_id IS NULL) ⇒ kind = 'organization'` (enforced in `createDivisionAction`, not the database; from 2026-09-21 — before that, top-level rows were divisions)
 - `(kind = 'pmu') ⇒ pmu_parent_division_id IS NOT NULL`
 - `(kind = 'pmu') ⇒ has_pmu = false`
 

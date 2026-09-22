@@ -13,12 +13,19 @@ import {
   isEligibleDelegate,
   validateDelegationWindow,
 } from '@/lib/rbac';
+import { organizationOf, STRUCTURE_KIND_LABEL } from '@/lib/structure-shared';
 
 import type { DelegationState } from './states';
 
 /**
  * Division access delegation — a Division Head temporarily hands their
  * division access to another Division Head or a user in their division.
+ *
+ * A directorate head (an Assistant Director) and an organization head hand
+ * over their directorate / organization the same way. The delegate then holds
+ * the whole cascade — head powers over every division beneath — for the
+ * window, because getHeadedDivisionIds expands a delegated directorate or
+ * organization exactly as it expands a headed one.
  *
  * The window is calendar-based (inclusive IST days) and expires on its
  * own: every RBAC read filters on startsAt <= now <= endsAt, so nothing
@@ -112,7 +119,14 @@ export async function createDelegationAction(
   const [meRow, division, target] = await Promise.all([
     prisma.user.findUnique({
       where: { id: me.id },
-      select: { id: true, name: true, isActive: true, isSuperAdmin: true, divisionId: true },
+      select: {
+        id: true,
+        name: true,
+        isActive: true,
+        isSuperAdmin: true,
+        isOrganizationHead: true,
+        divisionId: true,
+      },
     }),
     prisma.division.findUnique({
       where: { id: parsed.data.divisionId },
@@ -130,13 +144,35 @@ export async function createDelegationAction(
     }),
   ]);
   if (!meRow || !meRow.isActive) return fail('Your account is unavailable.', epoch);
-  if (!division || division.kind !== 'division') return fail('Division not found.', epoch);
+  // Only what can be headed: a division, a directorate or an organization.
+  if (
+    !division ||
+    (division.kind !== 'division' &&
+      division.kind !== 'directorate' &&
+      division.kind !== 'organization')
+  ) {
+    return fail('Division not found.', epoch);
+  }
   if (!target) return fail('User not found.', epoch);
 
-  // Only the division's direct head (or Super Admin) may delegate —
-  // a delegate cannot re-delegate.
-  if (!canDelegateDivision(meRow, division)) {
-    return fail('Only the division head can delegate this division.', epoch);
+  // Only the unit's own head (or Super Admin) may delegate — a delegate
+  // cannot re-delegate. A division's or directorate's head is its
+  // head_user_id; an organization's are the users whose Organization-head
+  // toggle is on and whose home division sits in it.
+  const mayDelegate =
+    division.kind === 'organization'
+      ? meRow.isSuperAdmin ||
+        (meRow.isOrganizationHead &&
+          organizationOf(
+            meRow.divisionId,
+            await prisma.division.findMany({
+              select: { id: true, kind: true, parentId: true, pmuParentDivisionId: true },
+            }),
+          ) === division.id)
+      : canDelegateDivision(meRow, division);
+  if (!mayDelegate) {
+    const unit = STRUCTURE_KIND_LABEL[division.kind].toLowerCase();
+    return fail(`Only the ${unit} head can delegate this ${unit}.`, epoch);
   }
 
   // Direct headships only for the eligibility check — an existing

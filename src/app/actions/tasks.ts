@@ -33,6 +33,7 @@ import {
 } from '@/lib/visibility';
 import { getPmuTeamMemberIds, isElevatedOverDivision } from '@/lib/pmu-team';
 import { resolvePmuTeamShareOnCreate } from '@/lib/pmu-team-shared';
+import { isTaskBoardKind } from '@/lib/structure-shared';
 import {
   buildTaskParticipantWhere,
   isTaskContributor,
@@ -449,6 +450,13 @@ async function createTaskInner(
       where: { id: targetDivisionId },
       select: { kind: true, name: true },
     });
+    // Only a division or a PMU carries tasks. An organization or directorate
+    // is a container — refused here even when the caller's headship reaches
+    // it (an organization head heads the organization row too), so no task
+    // can ever sit on one, whatever the request says.
+    if (!targetDivision || !isTaskBoardKind(targetDivision.kind)) {
+      return fail('Tasks belong to a division or a PMU team. Choose one of those.', epoch);
+    }
     // Office of JS tasks may be owned by any active user (same identifier as
     // getOfficeOfJsDivisionId — the seeded division name).
     const isOfficeOfJs = targetDivision?.name === 'Office of JS';
@@ -1049,6 +1057,17 @@ export async function updateTaskFieldsAction(
     });
     if (!meRow?.isSuperAdmin && meRow?.hierarchySlot !== 'osd') {
       return fail('Only OSD or Super Admin can change the division.', epoch);
+    }
+    // The destination must be somewhere a task can live. The picker only ever
+    // offers divisions and PMUs, but this path previously wrote whatever id
+    // arrived — so an organization, a directorate, even a sub-division could
+    // have been set by a crafted request.
+    const destination = await prisma.division.findUnique({
+      where: { id: parsed.data.divisionId },
+      select: { kind: true },
+    });
+    if (!destination || !isTaskBoardKind(destination.kind)) {
+      return fail('A task can only move to a division or a PMU team.', epoch);
     }
     data.divisionId = parsed.data.divisionId;
     // The current sub-division belongs to the old division's subtree, so it

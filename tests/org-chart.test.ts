@@ -232,4 +232,27 @@ describe('resolveUnitPlacement', () => {
     const orphan: UnitNode = { id: 'Y', kind: 'sub_division', parentId: null, pmuParentDivisionId: null };
     expect('error' in resolveUnitPlacement(orphan, byId)).toBe(true);
   });
+
+  // People are homed in divisions; organizations and directorates only group
+  // divisions, so a drop onto either is refused rather than written.
+  it('refuses a drop onto an organization', () => {
+    const org: UnitNode = { id: 'HQ', kind: 'organization', parentId: null, pmuParentDivisionId: null };
+    expect('error' in resolveUnitPlacement(org, byId)).toBe(true);
+  });
+
+  it('refuses a drop onto a directorate', () => {
+    const dir: UnitNode = { id: 'DIR', kind: 'directorate', parentId: 'HQ', pmuParentDivisionId: null };
+    expect('error' in resolveUnitPlacement(dir, byId)).toBe(true);
+  });
+
+  it('a division inside an organization still places exactly as before', () => {
+    const nested: UnitNode = { id: 'D2', kind: 'division', parentId: 'HQ', pmuParentDivisionId: null };
+    expect(resolveUnitPlacement(nested, byId)).toEqual({
+      divisionId: 'D2',
+      subDivisionId: null,
+      sectionId: null,
+      pmuId: null,
+      isPmu: false,
+    });
+  });
 });

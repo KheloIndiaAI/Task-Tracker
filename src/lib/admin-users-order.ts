@@ -1,3 +1,5 @@
+import type { StructureKind } from '@/lib/structure-shared';
+
 /**
  * "Sort by division" ordering for the Super Admin → Users list.
  *
@@ -32,7 +34,7 @@ export type OrderableUser = {
 export type OrderableDivision = {
   id: string;
   name: string;
-  kind: 'division' | 'sub_division' | 'section' | 'pmu';
+  kind: StructureKind;
   parentId: string | null;
   pmuParentDivisionId: string | null;
   displayOrder: number;

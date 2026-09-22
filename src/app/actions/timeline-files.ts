@@ -152,6 +152,16 @@ export async function createTimelineFileAction(
     return { ok: false, fieldErrors, epoch };
   }
 
+  // A file is marked to DIVISIONS — the only kind the picker offers, and the
+  // unit whose Directors act on it. Checked here because this path used to
+  // accept any id, which would now include an organization or directorate.
+  const markedCount = await prisma.division.count({
+    where: { id: { in: parsed.data.markedTo }, kind: 'division' },
+  });
+  if (markedCount !== new Set(parsed.data.markedTo).size) {
+    return { ok: false, fieldErrors: { markedTo: 'Mark the file to divisions only.' }, epoch };
+  }
+
   const received = new Date(parsed.data.receivedDate);
   const deadline = parsed.data.deadlineDate ? new Date(parsed.data.deadlineDate) : null;
   const refYear = received.getUTCFullYear();
@@ -632,6 +642,15 @@ export async function addMarkedToAction(
     divisionId: formData.get('divisionId'),
   });
   if (!parsed.success) return fail('Invalid input.', epoch);
+
+  // Divisions only — see createTimelineFileAction.
+  const markTarget = await prisma.division.findUnique({
+    where: { id: parsed.data.divisionId },
+    select: { kind: true },
+  });
+  if (markTarget?.kind !== 'division') {
+    return fail('A file can only be marked to a division.', epoch);
+  }
 
   try {
     await prisma.timelineFileMarkedTo.create({

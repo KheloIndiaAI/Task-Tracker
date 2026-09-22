@@ -282,8 +282,10 @@ export async function commitImportAction(
   const ownerIds = Array.from(new Set(parsed.data.rows.map((r) => r.ownerId)));
 
   const [divs, owners] = await Promise.all([
+    // Divisions only — the preview resolves nothing else, and no task may
+    // live on an organization or directorate (isTaskBoardKind).
     prisma.division.findMany({
-      where: { id: { in: divIds } },
+      where: { id: { in: divIds }, kind: 'division' },
       select: { id: true },
     }),
     prisma.user.findMany({

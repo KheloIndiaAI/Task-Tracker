@@ -3,8 +3,8 @@ import { Suspense } from 'react';
 import { redirect } from 'next/navigation';
 
 import { auth } from '@/lib/auth';
-import { prisma } from '@/lib/db';
 import { canAccessDocumentCentreById } from '@/lib/document-centre';
+import { fetchTaskDivisionOptions } from '@/lib/visibility';
 import {
   isQuerySearchable,
   searchFull,
@@ -92,13 +92,10 @@ export default async function SearchPage({ searchParams }: PageProps) {
           documents: [] as SearchResults['documents'],
           totals: { tasks: 0, timelineFiles: 0, users: 0, tags: 0, documents: 0 },
         } as SearchResults),
+    // Flat, and scoped to the signed-in user — see fetchTaskDivisionOptions.
     showTaskFilters
-      ? prisma.division.findMany({
-          where: { kind: 'division' },
-          select: { id: true, name: true },
-          orderBy: { displayOrder: 'asc' },
-        })
-      : Promise.resolve([]),
+      ? fetchTaskDivisionOptions(session.user.id)
+      : Promise.resolve<{ id: string; name: string }[]>([]),
   ]);
 
   const grandTotal =

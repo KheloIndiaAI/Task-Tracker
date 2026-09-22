@@ -64,6 +64,13 @@ async function main() {
     console.log(`Renamed legacy HMAYS division to HMYAS (${hmyas.id}).`);
   } else if (!hmyas) {
     const maxOrder = await prisma.division.aggregate({ _max: { displayOrder: true } });
+    // Every division sits in an organization (2026-09-21); HMYAS belongs to
+    // Ministry Headquarter. Top-level only on a database that predates it.
+    const hq = await prisma.division.findFirst({
+      where: { kind: 'organization', name: 'Ministry Headquarter' },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
     hmyas = await prisma.division.create({
       data: {
         name: 'HMYAS',
@@ -71,6 +78,7 @@ async function main() {
         avatarColour: '#854d0e',
         abbreviation: 'HMYAS',
         displayOrder: (maxOrder._max.displayOrder ?? 0) + 1,
+        parentId: hq?.id ?? null,
       },
     });
     console.log(`Created HMYAS division (${hmyas.id}).`);

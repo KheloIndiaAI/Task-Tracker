@@ -1,3 +1,5 @@
+import type { StructureKind } from '@/lib/structure-shared';
+
 /**
  * Pure org-chart partition — no React, no DB, so it is unit-testable.
  *
@@ -114,12 +116,12 @@ export function collectReportingSubtree(
 }
 
 /**
- * A structural unit (division / sub-division / section / PMU) — the shape
- * needed to resolve a full placement for someone moved into it.
+ * A structural unit — the shape needed to resolve a full placement for
+ * someone moved into it.
  */
 export type UnitNode = {
   id: string;
-  kind: 'division' | 'sub_division' | 'section' | 'pmu';
+  kind: StructureKind;
   parentId: string | null;
   pmuParentDivisionId: string | null;
 };
@@ -149,6 +151,15 @@ export function resolveUnitPlacement(
   nodeById: Map<string, UnitNode>,
 ): UnitPlacement | { error: string } {
   switch (target.kind) {
+    // People are placed in divisions. An organization or directorate only
+    // groups divisions, so dropping someone on one would leave their home
+    // division pointing at a container — refused here rather than written.
+    case 'organization':
+    case 'directorate':
+      return {
+        error:
+          'People belong to a division. Drop them onto a division, sub-division, section or PMU inside it.',
+      };
     case 'division':
       return {
         divisionId: target.id,

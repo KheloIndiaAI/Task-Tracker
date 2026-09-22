@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { auth } from '@/lib/auth';
 import { hashPassword } from '@/lib/auth/password';
 import { prisma } from '@/lib/db';
+import { isStructuralKind } from '@/lib/structure-shared';
 
 /**
  * Super Admin actions for managing users.
@@ -131,6 +132,17 @@ async function validatePlacement(opts: {
 }): Promise<Record<string, string> | null> {
   const errors: Record<string, string> = {};
 
+  // People are homed in a division — never directly in an organization or a
+  // directorate, which only group divisions (see structure-shared.ts).
+  const home = await prisma.division.findUnique({
+    where: { id: opts.divisionId },
+    select: { kind: true },
+  });
+  if (home && isStructuralKind(home.kind)) {
+    errors.divisionId =
+      'Choose a division. People belong to a division, not an organization or directorate.';
+  }
+
   if (opts.sectionId && !opts.pmuId) {
     const section = await prisma.division.findUnique({
       where: { id: opts.sectionId },
@@ -242,6 +254,10 @@ const createUserSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'on'),
+  isOrganizationHead: z
+    .string()
+    .optional()
+    .transform((v) => v === 'on'),
   // phone + work activities are self-service on /profile — the admin form
   // never collects them, so they are intentionally absent here.
 });
@@ -276,6 +292,7 @@ export async function createUserAction(
     canAccessBusinessCards: formData.get('canAccessBusinessCards'),
     canAddJsComment: formData.get('canAddJsComment'),
     canGenerateReports: formData.get('canGenerateReports'),
+    isOrganizationHead: formData.get('isOrganizationHead'),
   });
   if (!parsed.success) {
     const fieldErrors: Record<string, string> = {};
@@ -337,6 +354,7 @@ export async function createUserAction(
           canAccessBusinessCards: parsed.data.canAccessBusinessCards ?? false,
           canAddJsComment: parsed.data.canAddJsComment ?? false,
           canGenerateReports: parsed.data.canGenerateReports ?? false,
+          isOrganizationHead: parsed.data.isOrganizationHead ?? false,
           forcePasswordChange: parsed.data.forcePasswordChange ?? true,
           createdById: guard.userId,
         },
@@ -364,6 +382,7 @@ export async function createUserAction(
       canAccessBusinessCards: created.canAccessBusinessCards,
       canAddJsComment: created.canAddJsComment,
       canGenerateReports: created.canGenerateReports,
+      isOrganizationHead: created.isOrganizationHead,
     });
 
     revalidateAll();
@@ -413,6 +432,10 @@ const updateUserSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'on'),
+  isOrganizationHead: z
+    .string()
+    .optional()
+    .transform((v) => v === 'on'),
   // phone + work activities are self-service on /profile — the admin form
   // never collects them, so they are intentionally absent here (and must
   // never be written from this action, which would wipe self-set values).
@@ -443,6 +466,7 @@ export async function updateUserAction(
     canAccessBusinessCards: formData.get('canAccessBusinessCards'),
     canAddJsComment: formData.get('canAddJsComment'),
     canGenerateReports: formData.get('canGenerateReports'),
+    isOrganizationHead: formData.get('isOrganizationHead'),
   });
   if (!parsed.success) {
     const fieldErrors: Record<string, string> = {};
@@ -470,6 +494,7 @@ export async function updateUserAction(
       canAccessBusinessCards: true,
       canAddJsComment: true,
       canGenerateReports: true,
+      isOrganizationHead: true,
     },
   });
   if (!before) return fail('User not found.', epoch);
@@ -551,6 +576,7 @@ export async function updateUserAction(
           canAccessBusinessCards: parsed.data.canAccessBusinessCards,
           canAddJsComment: parsed.data.canAddJsComment,
           canGenerateReports: parsed.data.canGenerateReports,
+          isOrganizationHead: parsed.data.isOrganizationHead,
         },
       });
       if (extraToRemove.length > 0) {
@@ -587,6 +613,7 @@ export async function updateUserAction(
       canAccessBusinessCards: updated.canAccessBusinessCards,
       canAddJsComment: updated.canAddJsComment,
       canGenerateReports: updated.canGenerateReports,
+      isOrganizationHead: updated.isOrganizationHead,
     });
 
     // Granting or revoking Super Admin is security-sensitive — leave a
@@ -646,6 +673,19 @@ export async function updateUserAction(
         updated.id,
         { canGenerateReports: before.canGenerateReports },
         { canGenerateReports: updated.canGenerateReports },
+      );
+    }
+
+    // Organization head is full head power over every division in the
+    // person's organization — the widest grant on this form, so it always
+    // gets its own entry rather than hiding in the generic update diff.
+    if (before.isOrganizationHead !== updated.isOrganizationHead) {
+      await audit(
+        guard.userId,
+        'role_change',
+        updated.id,
+        { isOrganizationHead: before.isOrganizationHead },
+        { isOrganizationHead: updated.isOrganizationHead },
       );
     }
 

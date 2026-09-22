@@ -111,6 +111,8 @@ async function main() {
   } else {
   console.log('seed-mock: creating divisions…');
 
+  // Every division sits in an organization (2026-09-21) — the mock divisions
+  // join the one Office of JS is in (Ministry Headquarter, from seed.ts).
   khiDiv = await prisma.division.create({
     data: {
       name: 'Khelo India Division',
@@ -119,6 +121,7 @@ async function main() {
       hasPmu: true,
       displayOrder: 1,
       createdById: osd.id,
+      parentId: officeOfJs.parentId,
     },
   });
 
@@ -130,6 +133,7 @@ async function main() {
       hasPmu: false,
       displayOrder: 2,
       createdById: osd.id,
+      parentId: officeOfJs.parentId,
     },
   });
 

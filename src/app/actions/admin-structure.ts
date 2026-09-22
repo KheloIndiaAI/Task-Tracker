@@ -6,6 +6,7 @@ import { z } from 'zod';
 
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { allowedParentKinds } from '@/lib/structure-shared';
 import {
   collectReportingSubtree,
   resolveUnitPlacement,
@@ -84,7 +85,14 @@ async function audit(
 // createDivisionAction
 // ============================================================
 
-const KINDS = ['division', 'sub_division', 'section', 'pmu'] as const;
+const KINDS = [
+  'organization',
+  'directorate',
+  'division',
+  'sub_division',
+  'section',
+  'pmu',
+] as const;
 const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 
 const createDivisionSchema = z
@@ -106,8 +114,28 @@ const createDivisionSchema = z
       .default('#1e1b4b'),
   })
   .superRefine((data, ctx) => {
-    if (data.kind === 'division' && data.parentId) {
-      ctx.addIssue({ code: 'custom', path: ['parentId'], message: 'Top-level divisions have no parent' });
+    if (data.kind === 'organization' && data.parentId) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['parentId'],
+        message: 'An organization is the top of its chart and has no parent',
+      });
+    }
+    if (data.kind === 'directorate' && !data.parentId) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['parentId'],
+        message: 'A directorate sits in an organization',
+      });
+    }
+    // Every division now sits in an organization, directly or through a
+    // directorate — the rule that keeps a chart from growing loose roots.
+    if (data.kind === 'division' && !data.parentId) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['parentId'],
+        message: 'Choose the organization or directorate this division belongs to',
+      });
     }
     if (data.kind === 'sub_division' && !data.parentId) {
       ctx.addIssue({ code: 'custom', path: ['parentId'], message: 'Sub-divisions need a parent division' });
@@ -159,11 +187,20 @@ export async function createDivisionAction(
     if (!parent) {
       return { ok: false, fieldErrors: { parentId: 'Parent does not exist' }, epoch };
     }
-    if (parsed.data.kind === 'sub_division' && parent.kind !== 'division') {
-      return { ok: false, fieldErrors: { parentId: 'Pick a top-level division' }, epoch };
-    }
-    if (parsed.data.kind === 'section' && parent.kind !== 'sub_division') {
-      return { ok: false, fieldErrors: { parentId: 'Pick a sub-division' }, epoch };
+    // The one shared matrix (allowedParentKinds) decides — the same one the
+    // create dialog draws its parent picker from.
+    if (!allowedParentKinds(parsed.data.kind).includes(parent.kind)) {
+      const expected: Record<string, string> = {
+        directorate: 'Pick an organization',
+        division: 'Pick an organization or a directorate',
+        sub_division: 'Pick a division',
+        section: 'Pick a sub-division',
+      };
+      return {
+        ok: false,
+        fieldErrors: { parentId: expected[parsed.data.kind] ?? 'That parent is not allowed here' },
+        epoch,
+      };
     }
   }
   if (parsed.data.pmuParentDivisionId) {
@@ -313,8 +350,10 @@ export async function deleteDivisionAction(
     node._count.tasks > 0;
 
   if (inUse) {
+    const unit =
+      node.kind === 'organization' || node.kind === 'directorate' ? node.kind : 'division';
     return fail(
-      'This division has people, children, or tasks attached. Move them out first.',
+      `This ${unit} has people, children, or tasks attached. Move them out first.`,
       epoch,
     );
   }
@@ -639,8 +678,18 @@ export async function setDivisionHeadAction(
     select: { id: true, name: true, kind: true, headUserId: true },
   });
   if (!division) return fail('Division not found.', epoch);
-  if (division.kind !== 'division') {
-    return fail('Only top-level divisions have a head.', epoch);
+  // A division has one head; so does a directorate (its Assistant Director),
+  // and heading one cascades to every division beneath it. An organization's
+  // heads are different in kind — every Super Admin, plus whoever carries the
+  // Organization-head toggle — so they are set from Users, not here.
+  if (division.kind === 'organization') {
+    return fail(
+      'Organization heads are set from Users: switch on Organization head for the person.',
+      epoch,
+    );
+  }
+  if (division.kind !== 'division' && division.kind !== 'directorate') {
+    return fail('Only a division or a directorate has a head.', epoch);
   }
   if (division.headUserId === parsed.data.headUserId) return ok(epoch);
 

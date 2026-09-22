@@ -38,11 +38,17 @@ type DivisionHeadCardProps = {
   activeDelegates?: ActiveDelegate[];
   /** Only Super Admin may change the mapping; others see it read-only. */
   canEdit: boolean;
+  /**
+   * What is being headed. A directorate's head (an Assistant Director) gets
+   * head powers over every division in it, and can delegate that access.
+   */
+  kind?: 'division' | 'directorate';
 };
 
 /**
  * Shows and (for Super Admin) edits the division's head — the mapping
- * that drives division-based RBAC and delegation rights.
+ * that drives division-based RBAC and delegation rights. Also used for a
+ * directorate, whose single head is stored the same way (head_user_id).
  */
 export function DivisionHeadCard({
   divisionId,
@@ -51,7 +57,9 @@ export function DivisionHeadCard({
   candidates,
   activeDelegates = [],
   canEdit,
+  kind = 'division',
 }: DivisionHeadCardProps) {
+  const roleLabel = kind === 'directorate' ? 'Directorate head' : 'Division head';
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [state, formAction] = useFormState(setDivisionHeadAction, INITIAL_STRUCTURE_STATE);
@@ -78,7 +86,7 @@ export function DivisionHeadCard({
     <div className="mb-4 bg-panel border border-line rounded-xl px-4 py-3 flex items-center gap-3">
       <i className="ti ti-crown text-[16px] text-primary shrink-0" aria-hidden="true" />
       <div className="min-w-0 flex-1">
-        <p className="text-[11px] text-ink-3">Division head</p>
+        <p className="text-[11px] text-ink-3">{roleLabel}</p>
         {currentHead ? (
           <p className="text-[13px] font-medium text-ink truncate">
             {currentHead.name}
@@ -118,14 +126,23 @@ export function DivisionHeadCard({
         </button>
       ) : null}
 
-      <Sheet open={open} onClose={close} title="Division head" subtitle={divisionName}>
+      <Sheet open={open} onClose={close} title={roleLabel} subtitle={divisionName}>
         {open ? (
           <div className="flex flex-col gap-3">
-            <p className="text-[12px] text-ink-3">
-              The head can assign tasks within the division, receives transfers
-              from its users, and can delegate access. Super Admin is notified of
-              every delegation.
-            </p>
+            {kind === 'directorate' ? (
+              <p className="text-[12px] text-ink-3">
+                The head gets full head powers over every division in this
+                directorate — the same as each division&rsquo;s own head, who
+                keeps theirs — and can delegate that access. Super Admin is
+                notified of every delegation.
+              </p>
+            ) : (
+              <p className="text-[12px] text-ink-3">
+                The head can assign tasks within the division, receives transfers
+                from its users, and can delegate access. Super Admin is notified of
+                every delegation.
+              </p>
+            )}
 
             <input
               type="text"

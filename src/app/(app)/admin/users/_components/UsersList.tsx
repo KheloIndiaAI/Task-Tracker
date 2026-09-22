@@ -40,6 +40,7 @@ export type UserRow = {
   canAccessBusinessCards: boolean;
   canAddJsComment: boolean;
   canGenerateReports: boolean;
+  isOrganizationHead: boolean;
   lastLogin: Date | null;
 };
 
@@ -276,6 +277,7 @@ function rowToDefaults(u: UserRow): UserFormDefaults {
     canAccessBusinessCards: u.canAccessBusinessCards,
     canAddJsComment: u.canAddJsComment,
     canGenerateReports: u.canGenerateReports,
+    isOrganizationHead: u.isOrganizationHead,
   };
 }
 

@@ -8,6 +8,11 @@ import { DivisionHeadCard, type HeadCandidate } from './_components/DivisionHead
 import { PmuTeamHeadCard, type PmuHeadCandidate } from './_components/PmuTeamHeadCard';
 import { HierarchyMapper, type OfficerNode } from './_components/HierarchyMapper';
 import {
+  OrganizationHeadsCard,
+  StructureUnitsPanel,
+  type StructureUnit,
+} from './_components/OrganizationPanels';
+import {
   PersonInspector,
   type InspectorUser,
 } from './_components/PersonInspector';
@@ -17,6 +22,12 @@ import type {
   UserFormDivisionOption,
   UserFormSupervisorOption,
 } from '@/app/(app)/admin/users/_components/UserFormFields';
+import {
+  expandHeadedToDescendants,
+  isStructuralKind,
+  organizationOf,
+  type StructureKind,
+} from '@/lib/structure-shared';
 
 type PageProps = {
   searchParams?: { division?: string; selected?: string };
@@ -110,6 +121,30 @@ export default async function StructurePage({ searchParams }: PageProps) {
     bump(d.id);
   }
 
+  // Organizations and directorates hold nobody directly — people are homed in
+  // divisions — so their badge is a roll-up: every person whose home division
+  // sits anywhere beneath them. That is a headcount, so PMU members are in it
+  // (a PMU member's home division is the PMU's parent division) even though
+  // the division badges leave them to their PMU node; an organization's badge
+  // is therefore the sum of its divisions' AND their PMUs' members, less the
+  // division heads each PMU badge repeats.
+  const structureTree = divisions.map((d) => ({
+    id: d.id,
+    kind: d.kind,
+    parentId: d.parentId,
+    pmuParentDivisionId: d.pmuParentDivisionId,
+  }));
+  const divisionsUnder = new Map<string, Set<string>>();
+  for (const d of divisions) {
+    if (!isStructuralKind(d.kind)) continue;
+    const beneath = new Set(expandHeadedToDescendants([d.id], structureTree));
+    beneath.delete(d.id);
+    divisionsUnder.set(d.id, beneath);
+  }
+  for (const [id, beneath] of divisionsUnder) {
+    userCountsByDivision.set(id, allUsers.filter((u) => beneath.has(u.divisionId)).length);
+  }
+
   const treeNodes: StructureNode[] = divisions.map((d) => ({
     id: d.id,
     name: d.name,
@@ -144,10 +179,10 @@ export default async function StructurePage({ searchParams }: PageProps) {
     return (
       <div className="max-w-6xl mx-auto py-10 text-center">
         <i className="ti ti-building text-[40px] text-ink-3 block mb-3" aria-hidden="true" />
-        <h2 className="font-serif text-[22px] text-ink mb-2">No divisions yet</h2>
+        <h2 className="font-serif text-[22px] text-ink mb-2">No organizations yet</h2>
         <p className="text-[13px] text-ink-2 max-w-md mx-auto leading-relaxed">
-          Add your first division to start mapping the hierarchy. Use the “New” button in the
-          left sidebar once divisions exist.
+          Add an organization first, then the divisions inside it, to start mapping the
+          hierarchy.
         </p>
       </div>
     );
@@ -156,12 +191,15 @@ export default async function StructurePage({ searchParams }: PageProps) {
   // Active delegations on the shown division. A live delegation makes its
   // recipient the temporary head (all head powers) for the window, so the
   // Structure head card surfaces who currently holds that access next to the
-  // Change control. Only meaningful for top-level divisions (delegation is
-  // division-scoped). Expiry is purely time-based — the window filter is the
-  // single source of "active".
+  // Change control. Only meaningful for the units that can be headed —
+  // divisions, directorates and organizations; sub-divisions, sections and
+  // PMU teams are never delegated. Expiry is purely time-based — the window
+  // filter is the single source of "active".
   const now = new Date();
   const activeHeadDelegations =
-    activeDivision.kind === 'division'
+    activeDivision.kind === 'division' ||
+    activeDivision.kind === 'directorate' ||
+    activeDivision.kind === 'organization'
       ? await prisma.divisionAccessDelegation.findMany({
           where: {
             divisionId: activeDivision.id,
@@ -249,6 +287,18 @@ export default async function StructurePage({ searchParams }: PageProps) {
   const selectedUser = searchParams?.selected
     ? allUsers.find((u) => u.id === searchParams.selected) ?? null
     : null;
+  // The inspector's Edit saves the WHOLE user form (updateUserAction), and a
+  // switch or checkbox missing from its defaults posts as off. So the defaults
+  // carry every access grant and extra division exactly as Users does
+  // (rowToDefaults) — otherwise saving from here would silently revoke them.
+  const selectedExtraDivisionIds = selectedUser
+    ? (
+        await prisma.userDivisionAccess.findMany({
+          where: { userId: selectedUser.id },
+          select: { divisionId: true },
+        })
+      ).map((a) => a.divisionId)
+    : [];
 
   let inspectorUser: InspectorUser | null = null;
   if (selectedUser) {
@@ -299,6 +349,12 @@ export default async function StructurePage({ searchParams }: PageProps) {
         pmuId: selectedUser.pmuId,
         supervisorId: selectedUser.supervisorId,
         isSuperAdmin: selectedUser.isSuperAdmin,
+        extraDivisionIds: selectedExtraDivisionIds,
+        canAccessDocumentCentre: selectedUser.canAccessDocumentCentre,
+        canAccessBusinessCards: selectedUser.canAccessBusinessCards,
+        canAddJsComment: selectedUser.canAddJsComment,
+        canGenerateReports: selectedUser.canGenerateReports,
+        isOrganizationHead: selectedUser.isOrganizationHead,
       },
     };
   }
@@ -309,12 +365,45 @@ export default async function StructurePage({ searchParams }: PageProps) {
     name: d.name,
     parentId: d.parentId,
     pmuParentDivisionId: d.pmuParentDivisionId,
-    kind: d.kind as 'division' | 'sub_division' | 'section' | 'pmu',
+    kind: d.kind as StructureKind,
   }));
 
   const supervisorOptions: UserFormSupervisorOption[] = allUsers
     .filter((u) => u.isActive)
     .map((u) => ({ id: u.id, name: u.name, designation: u.designation }));
+
+  // For an organization or directorate, the centre column shows what it holds
+  // and who heads it, instead of the per-division reporting chart.
+  const activeIsStructural = isStructuralKind(activeDivision.kind);
+  const structureUnits: StructureUnit[] = activeIsStructural
+    ? divisions
+        .filter((d) => d.parentId === activeDivision.id && d.kind !== 'pmu')
+        .map((d) => ({
+          id: d.id,
+          name: d.name,
+          kind: d.kind as StructureKind,
+          userCount: userCountsByDivision.get(d.id) ?? 0,
+        }))
+    : [];
+  // Organization heads: every Super Admin, by role, plus anyone whose
+  // Organization-head toggle is on and whose home division sits in THIS one.
+  const orgSuperAdmins =
+    activeDivision.kind === 'organization'
+      ? allUsers
+          .filter((u) => u.isActive && u.isSuperAdmin)
+          .map((u) => ({ id: u.id, name: u.name, designation: u.designation }))
+      : [];
+  const orgHeads =
+    activeDivision.kind === 'organization'
+      ? allUsers
+          .filter(
+            (u) =>
+              u.isActive &&
+              u.isOrganizationHead &&
+              organizationOf(u.divisionId, structureTree) === activeDivision.id,
+          )
+          .map((u) => ({ id: u.id, name: u.name, designation: u.designation }))
+      : [];
 
   // Breadcrumb for the active node.
   const parentBreadcrumb = (() => {
@@ -344,8 +433,16 @@ export default async function StructurePage({ searchParams }: PageProps) {
 
       {/* Centre — Division head + Hierarchy Mapper */}
       <section>
-        {activeDivision.kind === 'division' ? (
+        {activeDivision.kind === 'organization' ? (
+          <OrganizationHeadsCard
+            superAdmins={orgSuperAdmins}
+            heads={orgHeads}
+            activeDelegates={activeDelegates}
+          />
+        ) : null}
+        {activeDivision.kind === 'division' || activeDivision.kind === 'directorate' ? (
           <DivisionHeadCard
+            kind={activeDivision.kind}
             divisionId={activeDivision.id}
             divisionName={activeDivision.name}
             currentHead={headCandidateOf(
@@ -381,11 +478,22 @@ export default async function StructurePage({ searchParams }: PageProps) {
             />
           );
         })}
-        <HierarchyMapper
-          divisionName={activeDivision.name}
-          parentBreadcrumb={parentBreadcrumb}
-          officers={officerNodes}
-        />
+        {activeIsStructural ? (
+          <StructureUnitsPanel
+            name={activeDivision.name}
+            kind={activeDivision.kind as StructureKind}
+            parentBreadcrumb={parentBreadcrumb}
+            units={structureUnits}
+            divisionCount={divisionsUnder.get(activeDivision.id)?.size ?? 0}
+            peopleCount={userCountsByDivision.get(activeDivision.id) ?? 0}
+          />
+        ) : (
+          <HierarchyMapper
+            divisionName={activeDivision.name}
+            parentBreadcrumb={parentBreadcrumb}
+            officers={officerNodes}
+          />
+        )}
       </section>
 
       {/* Right — Person Inspector */}
@@ -398,7 +506,7 @@ export default async function StructurePage({ searchParams }: PageProps) {
           activeDivision={{
             id: activeDivision.id,
             name: activeDivision.name,
-            kind: activeDivision.kind as 'division' | 'sub_division' | 'section' | 'pmu',
+            kind: activeDivision.kind as StructureKind,
           }}
           allUsers={treeUsers}
         />

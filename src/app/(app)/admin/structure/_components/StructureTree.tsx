@@ -19,6 +19,7 @@ import type {
   UserFormDivisionOption,
   UserFormSupervisorOption,
 } from '@/app/(app)/admin/users/_components/UserFormFields';
+import { isStructuralKind, type StructureKind } from '@/lib/structure-shared';
 
 export type TreeUser = {
   id: string;
@@ -34,7 +35,7 @@ export type TreeUser = {
 export type StructureNode = {
   id: string;
   name: string;
-  kind: 'division' | 'sub_division' | 'section' | 'pmu';
+  kind: StructureKind;
   parentId: string | null;
   pmuParentDivisionId: string | null;
   avatarColour: string;
@@ -50,6 +51,8 @@ type StructureTreeProps = {
 };
 
 const KIND_ICON: Record<StructureNode['kind'], string> = {
+  organization: 'ti-building-community',
+  directorate: 'ti-sitemap',
   division: 'ti-building',
   sub_division: 'ti-point-filled',
   section: 'ti-circle-dot',
@@ -82,10 +85,13 @@ export function StructureTree({ nodes, activeId, allUsers, divisions, supervisor
 
   // Orphan safety net: a PMU with no parent division still needs a home.
   const orphanPmus = (byParent.get(null) ?? []).filter((n) => n.kind === 'pmu');
-  const topDivisions = (byParent.get(null) ?? []).filter((n) => n.kind !== 'pmu');
+  // The roots: organizations. Anything else parentless (a division from
+  // before organizations existed) is still drawn, so nothing can go missing
+  // from the chart — it simply sits beside the organizations.
+  const roots = (byParent.get(null) ?? []).filter((n) => n.kind !== 'pmu');
 
   const openCreate = (defaults?: { kind: StructureNode['kind']; parentId?: string }) => {
-    setCreateDefaults(defaults ?? { kind: 'division' });
+    setCreateDefaults(defaults ?? { kind: 'organization' });
     setCreateOpen(true);
   };
 
@@ -93,10 +99,10 @@ export function StructureTree({ nodes, activeId, allUsers, divisions, supervisor
     <>
       <div className="bg-panel border border-line rounded-xl">
         <header className="flex items-center justify-between gap-2 px-3 py-2.5 border-b border-line-2">
-          <h2 className="section-label">Divisions</h2>
+          <h2 className="section-label">Organizations</h2>
           <button
             type="button"
-            onClick={() => openCreate({ kind: 'division' })}
+            onClick={() => openCreate({ kind: 'organization' })}
             className="inline-flex items-center gap-1 text-[11px] font-medium text-primary px-1.5 py-0.5 rounded-md hover:bg-primary-soft"
           >
             <i className="ti ti-plus text-[12px]" aria-hidden="true" />
@@ -110,10 +116,10 @@ export function StructureTree({ nodes, activeId, allUsers, divisions, supervisor
         </p>
 
         <div className="p-1.5">
-          {topDivisions.length === 0 ? (
-            <p className="text-[11px] text-ink-3 italic px-3 py-2">No divisions yet.</p>
+          {roots.length === 0 ? (
+            <p className="text-[11px] text-ink-3 italic px-3 py-2">No organizations yet.</p>
           ) : (
-            topDivisions.map((d) => (
+            roots.map((d) => (
               <TreeBranch
                 key={d.id}
                 node={d}
@@ -153,7 +159,7 @@ export function StructureTree({ nodes, activeId, allUsers, divisions, supervisor
       <CreateDivisionDialog
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        divisions={nodes.map((n) => ({ id: n.id, name: n.name, kind: n.kind }))}
+        divisions={nodes.map((n) => ({ id: n.id, name: n.name, kind: n.kind, parentId: n.parentId }))}
         initialKind={createDefaults?.kind}
         initialParentId={createDefaults?.parentId}
       />
@@ -211,7 +217,13 @@ function TreeBranch({
   onManageMembers: (n: StructureNode) => void;
 }) {
   const children = byParent.get(node.id) ?? [];
-  const [expanded, setExpanded] = useState(depth < 1);
+  // Open by kind, not depth: organizations, directorates and divisions start
+  // open, sub-divisions and below start closed. That is exactly the view the
+  // tree had when divisions were its roots — the ministry chart looks the
+  // same one level in — and a new Regional Centre opens to its divisions.
+  const [expanded, setExpanded] = useState(
+    isStructuralKind(node.kind) || node.kind === 'division',
+  );
 
   return (
     <div>
@@ -378,8 +390,25 @@ function RowMenu({
     };
   }, [open]);
 
-  const childKind: StructureNode['kind'] | null =
-    node.kind === 'division' ? 'sub_division' : node.kind === 'sub_division' ? 'section' : null;
+  // What can be added directly under this node, in the order offered. An
+  // organization takes directorates or divisions; a directorate, divisions;
+  // a division, sub-divisions (and PMU teams, offered separately below).
+  const childKinds: StructureNode['kind'][] =
+    node.kind === 'organization'
+      ? ['directorate', 'division']
+      : node.kind === 'directorate'
+        ? ['division']
+        : node.kind === 'division'
+          ? ['sub_division']
+          : node.kind === 'sub_division'
+            ? ['section']
+            : [];
+  const ADD_LABEL: Partial<Record<StructureNode['kind'], string>> = {
+    directorate: 'Add directorate',
+    division: 'Add division',
+    sub_division: 'Add sub-division',
+    section: 'Add section',
+  };
 
   const handleDelete = () => {
     if (!confirm(`Delete "${node.name}"? Only empty units can be deleted.`)) return;
@@ -433,16 +462,19 @@ function RowMenu({
             }}
           />
         ) : null}
-        {childKind && onAddChild ? (
-          <MenuItem
-            icon="ti-plus"
-            label={`Add ${childKind === 'sub_division' ? 'sub-division' : 'section'}`}
-            onClick={() => {
-              setOpen(false);
-              onAddChild({ kind: childKind, parentId: node.id });
-            }}
-          />
-        ) : null}
+        {onAddChild
+          ? childKinds.map((ck) => (
+              <MenuItem
+                key={ck}
+                icon="ti-plus"
+                label={ADD_LABEL[ck] ?? 'Add'}
+                onClick={() => {
+                  setOpen(false);
+                  onAddChild({ kind: ck, parentId: node.id });
+                }}
+              />
+            ))
+          : null}
         {node.kind === 'division' ? (
           <MenuItem
             icon="ti-building-bridge"
