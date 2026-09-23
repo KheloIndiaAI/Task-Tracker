@@ -602,6 +602,9 @@ describe('the two Super-Admin grants over other peoples tasks (2026-09-23)', () 
     hierarchySlot: 'aso',
     memberDivisionIds: [KI],
     headedDivisionIds: [] as string[],
+    // canSharePmuTeam reads these two; the rest of the rules ignore them.
+    pmuId: null as string | null,
+    pmuRole: null as string | null,
     ...overrides,
   });
   const task = { ownerId: 'someone', createdById: 'someone-else', divisionId: NSDF };
@@ -648,7 +651,14 @@ describe('the two Super-Admin grants over other peoples tasks (2026-09-23)', () 
       const holder = outsider({ canEditLatestStatus: true });
       expect(canManageTask(holder, task)).toBe(false);
       expect(canSetJsPriorityLane(holder, { divisionId: NSDF })).toBe(false);
-      expect(canSharePmuTeam(holder, { divisionId: NSDF, kind: 'division' })).toBe(false);
+      expect(
+        canSharePmuTeam(holder, {
+          ownerId: 'someone',
+          divisionId: NSDF,
+          divisionKind: 'division',
+          divisionHasPmu: true,
+        }),
+      ).toBe(false);
     });
   });
 });
