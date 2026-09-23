@@ -155,6 +155,8 @@ The app owns this table outright — no separate auth schema. NextAuth's Credent
 | `is_active` | `boolean` | NOT NULL, default true | Disabled users keep audit history; sign-in blocked when false (checked in the NextAuth `authorize` callback) |
 | `is_super_admin` | `boolean` | NOT NULL, default false | Same person as OSD initially |
 | `is_organization_head` | `boolean` | NOT NULL, default false | "Organization head" toggle (Super Admin → Users). Head of the organization the home division sits in, with head powers over every division beneath it. See [PERMISSIONS.md §5.20](PERMISSIONS.md) |
+| `can_edit_latest_status` | `boolean` | NOT NULL, default false | "Status access" toggle (Super Admin → Users). Write the Status line (`tasks.latest_status`) on any task this user can see. See [PERMISSIONS.md §5.22](PERMISSIONS.md) |
+| `can_schedule_tasks` | `boolean` | NOT NULL, default false | "Task scheduling access" toggle. Put any task this user can see — including an unscheduled one — into the Daily / Weekly / FortNight / Monthly / Watchlist lanes. See [PERMISSIONS.md §5.22](PERMISSIONS.md) |
 | `force_password_change` | `boolean` | NOT NULL, default false | Set by Super Admin at reset when "Force password change on next login" is ticked. Honoured in the auth callback — blocks any route except the change-password page until cleared |
 | `password_changed_at` | `timestamptz` |  | Written on every successful password change; used to invalidate older JWTs by comparing the token's `iat` |
 | `last_login` | `timestamptz` |  | Written on successful sign-in by the NextAuth `signIn` event |

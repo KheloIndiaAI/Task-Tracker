@@ -57,6 +57,8 @@ export type UserFormDefaults = {
   canAddJsComment?: boolean;
   canGenerateReports?: boolean;
   isOrganizationHead?: boolean;
+  canEditLatestStatus?: boolean;
+  canScheduleTasks?: boolean;
 };
 
 type UserFormFieldsProps = {
@@ -381,6 +383,42 @@ export function UserFormFields({
             name="canGenerateReports"
             defaultChecked={defaults?.canGenerateReports}
             ariaLabel="Grant report generation access"
+          />
+        </label>
+        <label className="mt-2 flex items-start justify-between gap-3 px-3 py-2.5 rounded-lg border border-line">
+          <span className="min-w-0">
+            <span className="inline-flex items-center gap-2 text-[12px] text-ink">
+              <i className="ti ti-writing text-[14px] text-primary" aria-hidden="true" />
+              Status access
+            </span>
+            <span className="mt-0.5 block text-[11px] text-ink-3">
+              Lets this user write the Status line on any task they can see, on
+              the tasks list and the task page. Owners, collaborators and heads
+              always can. Nothing else on the task opens up.
+            </span>
+          </span>
+          <Switch
+            name="canEditLatestStatus"
+            defaultChecked={defaults?.canEditLatestStatus}
+            ariaLabel="Grant status access"
+          />
+        </label>
+        <label className="mt-2 flex items-start justify-between gap-3 px-3 py-2.5 rounded-lg border border-line">
+          <span className="min-w-0">
+            <span className="inline-flex items-center gap-2 text-[12px] text-ink">
+              <i className="ti ti-calendar-plus text-[14px] text-primary" aria-hidden="true" />
+              Task scheduling access
+            </span>
+            <span className="mt-0.5 block text-[11px] text-ink-3">
+              Lets this user put any task they can see into the Daily / Weekly /
+              FortNight / Monthly / Watchlist lanes — including a task that is
+              not scheduled yet. Super Admin, OSD, Directors and heads always can.
+            </span>
+          </span>
+          <Switch
+            name="canScheduleTasks"
+            defaultChecked={defaults?.canScheduleTasks}
+            ariaLabel="Grant task scheduling access"
           />
         </label>
         <label className="mt-2 flex items-start justify-between gap-3 px-3 py-2.5 rounded-lg border border-line">

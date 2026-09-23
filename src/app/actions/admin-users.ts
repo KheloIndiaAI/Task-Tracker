@@ -260,6 +260,14 @@ const createUserSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'on'),
+  canEditLatestStatus: z
+    .string()
+    .optional()
+    .transform((v) => v === 'on'),
+  canScheduleTasks: z
+    .string()
+    .optional()
+    .transform((v) => v === 'on'),
   // phone + work activities are self-service on /profile — the admin form
   // never collects them, so they are intentionally absent here.
 });
@@ -295,6 +303,8 @@ export async function createUserAction(
     canAddJsComment: formData.get('canAddJsComment'),
     canGenerateReports: formData.get('canGenerateReports'),
     isOrganizationHead: formData.get('isOrganizationHead'),
+    canEditLatestStatus: formData.get('canEditLatestStatus'),
+    canScheduleTasks: formData.get('canScheduleTasks'),
   });
   if (!parsed.success) {
     const fieldErrors: Record<string, string> = {};
@@ -357,6 +367,8 @@ export async function createUserAction(
           canAddJsComment: parsed.data.canAddJsComment ?? false,
           canGenerateReports: parsed.data.canGenerateReports ?? false,
           isOrganizationHead: parsed.data.isOrganizationHead ?? false,
+          canEditLatestStatus: parsed.data.canEditLatestStatus ?? false,
+          canScheduleTasks: parsed.data.canScheduleTasks ?? false,
           forcePasswordChange: parsed.data.forcePasswordChange ?? true,
           createdById: guard.userId,
         },
@@ -385,6 +397,8 @@ export async function createUserAction(
       canAddJsComment: created.canAddJsComment,
       canGenerateReports: created.canGenerateReports,
       isOrganizationHead: created.isOrganizationHead,
+      canEditLatestStatus: created.canEditLatestStatus,
+      canScheduleTasks: created.canScheduleTasks,
     });
 
     revalidateAll();
@@ -438,6 +452,14 @@ const updateUserSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'on'),
+  canEditLatestStatus: z
+    .string()
+    .optional()
+    .transform((v) => v === 'on'),
+  canScheduleTasks: z
+    .string()
+    .optional()
+    .transform((v) => v === 'on'),
   // phone + work activities are self-service on /profile — the admin form
   // never collects them, so they are intentionally absent here (and must
   // never be written from this action, which would wipe self-set values).
@@ -469,6 +491,8 @@ export async function updateUserAction(
     canAddJsComment: formData.get('canAddJsComment'),
     canGenerateReports: formData.get('canGenerateReports'),
     isOrganizationHead: formData.get('isOrganizationHead'),
+    canEditLatestStatus: formData.get('canEditLatestStatus'),
+    canScheduleTasks: formData.get('canScheduleTasks'),
   });
   if (!parsed.success) {
     const fieldErrors: Record<string, string> = {};
@@ -497,6 +521,8 @@ export async function updateUserAction(
       canAddJsComment: true,
       canGenerateReports: true,
       isOrganizationHead: true,
+      canEditLatestStatus: true,
+      canScheduleTasks: true,
     },
   });
   if (!before) return fail('User not found.', epoch);
@@ -579,6 +605,8 @@ export async function updateUserAction(
           canAddJsComment: parsed.data.canAddJsComment,
           canGenerateReports: parsed.data.canGenerateReports,
           isOrganizationHead: parsed.data.isOrganizationHead,
+          canEditLatestStatus: parsed.data.canEditLatestStatus,
+          canScheduleTasks: parsed.data.canScheduleTasks,
         },
       });
       if (extraToRemove.length > 0) {
@@ -616,6 +644,8 @@ export async function updateUserAction(
       canAddJsComment: updated.canAddJsComment,
       canGenerateReports: updated.canGenerateReports,
       isOrganizationHead: updated.isOrganizationHead,
+      canEditLatestStatus: updated.canEditLatestStatus,
+      canScheduleTasks: updated.canScheduleTasks,
     });
 
     // Granting or revoking Super Admin is security-sensitive — leave a
@@ -688,6 +718,27 @@ export async function updateUserAction(
         updated.id,
         { isOrganizationHead: before.isOrganizationHead },
         { isOrganizationHead: updated.isOrganizationHead },
+      );
+    }
+
+    // Writing on other people's tasks: each gets its own entry, like the
+    // grants above, so the trail says exactly when it was handed over.
+    if (before.canEditLatestStatus !== updated.canEditLatestStatus) {
+      await audit(
+        guard.userId,
+        'role_change',
+        updated.id,
+        { canEditLatestStatus: before.canEditLatestStatus },
+        { canEditLatestStatus: updated.canEditLatestStatus },
+      );
+    }
+    if (before.canScheduleTasks !== updated.canScheduleTasks) {
+      await audit(
+        guard.userId,
+        'role_change',
+        updated.id,
+        { canScheduleTasks: before.canScheduleTasks },
+        { canScheduleTasks: updated.canScheduleTasks },
       );
     }
 

@@ -255,6 +255,17 @@ model User {
   // role (see canAccessReportGeneration in src/lib/reports-shared.ts) — this
   // flag only ever widens who ELSE can, same shape as can_add_js_comment.
   canGenerateReports  Boolean   @default(false) @map("can_generate_reports")
+  // Super-Admin-managed grant to write the Status line on the tasks list's
+  // Daily/Weekly/Fortnight/Monthly board (tasks.latest_status, the same field
+  // as the task page's Latest status) on ANY task this user can see. The
+  // owner, creator, collaborators, mentioned users and heads already may —
+  // this only widens who ELSE can. See canEditLatestStatus in rbac/rules.ts.
+  canEditLatestStatus Boolean   @default(false) @map("can_edit_latest_status")
+  // Super-Admin-managed grant to put a task — including an unscheduled one —
+  // into the Daily / Weekly / Fortnight / Monthly / Watchlist lanes, on any
+  // task this user can see. Super Admin, OSD, Director-grade members and
+  // heads already may (canSetJsPriorityLane); this widens who ELSE can.
+  canScheduleTasks    Boolean   @default(false) @map("can_schedule_tasks")
   // Super-Admin-managed grant: head of the ORGANIZATION this user's home
   // division sits in — full head powers cascading to every directorate,
   // division and PMU beneath it (see expandHeadedToDescendants). Super Admins

@@ -35,6 +35,7 @@ import { getPmuTeamMemberIds, isElevatedOverDivision } from '@/lib/pmu-team';
 import { resolvePmuTeamShareOnCreate } from '@/lib/pmu-team-shared';
 import { isTaskBoardKind } from '@/lib/structure-shared';
 import { DIRECTOR_GRADE_SLOTS, isDirectorGrade } from '@/lib/hierarchy-slots';
+import { isTaskVisibleTo } from '@/lib/visibility';
 import {
   buildTaskParticipantWhere,
   isTaskContributor,
@@ -938,8 +939,31 @@ export async function updateTaskFieldsAction(
   // (description) and latest status but nothing else. Any attempt to touch
   // another field on the same submission is rejected below.
   const collaboratorOnly = !baseEditor && (await isTaskContributor(me.id, task.id));
-  if (!baseEditor && !collaboratorOnly) {
+  // Last resort: the Super-Admin-managed "Status access" grant
+  // (users.can_edit_latest_status). It carries no division scope, so it counts
+  // only for a task this user can actually see, and it opens the Status line
+  // and nothing else.
+  const statusGrantOnly =
+    !baseEditor &&
+    !collaboratorOnly &&
+    (await prisma.user
+      .findUnique({ where: { id: me.id }, select: { canEditLatestStatus: true } })
+      .then((u) => u?.canEditLatestStatus === true)) &&
+    (await isTaskVisibleTo(me.id, task.id));
+  if (!baseEditor && !collaboratorOnly && !statusGrantOnly) {
     return fail('Only the task owner, creator, a collaborator, or a head of division can edit this task.', epoch);
+  }
+  if (statusGrantOnly) {
+    const editsBeyondStatus =
+      parsed.data.name !== undefined ||
+      parsed.data.description !== undefined ||
+      parsed.data.dueDate !== undefined ||
+      parsed.data.recurrenceRule !== undefined ||
+      parsed.data.divisionId !== undefined ||
+      parsed.data.subDivisionId !== undefined;
+    if (editsBeyondStatus) {
+      return fail('Status access covers the task status line only.', epoch);
+    }
   }
   if (collaboratorOnly) {
     const editsBeyondContribute =
@@ -2048,23 +2072,27 @@ export async function setJsPriorityLaneAction(
   const [meRow, headedDivisionIds, memberDivisionIds] = await Promise.all([
     prisma.user.findUnique({
       where: { id: me.id },
-      select: { hierarchySlot: true, isSuperAdmin: true },
+      select: { hierarchySlot: true, isSuperAdmin: true, canScheduleTasks: true },
     }),
     getHeadedDivisionIds(me.id),
     getMemberDivisionIds(me.id),
   ]);
   if (!meRow) return fail('Account not found.', epoch);
-  if (
-    !canSetJsPriorityLane(
-      {
-        isSuperAdmin: meRow.isSuperAdmin,
-        hierarchySlot: meRow.hierarchySlot,
-        memberDivisionIds,
-        headedDivisionIds,
-      },
-      { divisionId: task.divisionId },
-    )
-  ) {
+  // Role, membership or headship decides first. The Super-Admin-managed
+  // "Task scheduling access" grant (users.can_schedule_tasks) carries no
+  // division scope, so it counts only for a task this user can actually see.
+  const byRole = canSetJsPriorityLane(
+    {
+      isSuperAdmin: meRow.isSuperAdmin,
+      hierarchySlot: meRow.hierarchySlot,
+      memberDivisionIds,
+      headedDivisionIds,
+    },
+    { divisionId: task.divisionId },
+  );
+  const byGrant =
+    !byRole && meRow.canScheduleTasks && (await isTaskVisibleTo(me.id, task.id));
+  if (!byRole && !byGrant) {
     return fail('You cannot change JS Priority for this task.', epoch);
   }
 

@@ -131,6 +131,8 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
     canAddJsComment: u.canAddJsComment,
     canGenerateReports: u.canGenerateReports,
     isOrganizationHead: u.isOrganizationHead,
+    canEditLatestStatus: u.canEditLatestStatus,
+    canScheduleTasks: u.canScheduleTasks,
     lastLogin: u.lastLogin,
   }));
 

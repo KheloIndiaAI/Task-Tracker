@@ -6,7 +6,13 @@ import { auth } from '@/lib/auth';
 import { isMediaAndIt } from '@/lib/divisions';
 import { prisma } from '@/lib/db';
 import { formatDue, initialsOf } from '@/lib/format';
-import { canEditDivisionNotice, canManageTask, canSetJsPriorityLane, getHeadedDivisionIds } from '@/lib/rbac';
+import {
+  canEditDivisionNotice,
+  canEditLatestStatus,
+  canManageTask,
+  canSetJsPriorityLane,
+  getHeadedDivisionIds,
+} from '@/lib/rbac';
 import { getPmuTeamMemberIds } from '@/lib/pmu-team';
 import { getContributorTaskIds } from '@/lib/task-participants';
 import { resolveGroupByDivision } from '@/lib/task-grouping-shared';
@@ -80,6 +86,8 @@ export default async function TasksPage({ searchParams }: PageProps) {
         pmuId: true,
         canAddJsComment: true,
         canGenerateReports: true,
+        canEditLatestStatus: true,
+        canScheduleTasks: true,
         divisionAccess: { select: { divisionId: true } },
       },
     }),
@@ -160,7 +168,8 @@ export default async function TasksPage({ searchParams }: PageProps) {
   // Fortnight lane) is OSD / Super Admin only; `canChangeStatus` is decided per card
   // via canManageTask below. Both only gate what the UI offers — the server
   // actions re-authorize independently.
-  const canSetFortnight = me.isSuperAdmin || me.hierarchySlot === 'osd';
+  const canSetFortnight =
+    me.isSuperAdmin || me.hierarchySlot === 'osd' || me.canScheduleTasks;
   // JS Comment (the board's own field, distinct from Latest status) is Super
   // Admin, or a user carrying the can_add_js_comment grant — see
   // updateTaskJsCommentAction. Unrelated to task contribution rights below.
@@ -204,6 +213,10 @@ export default async function TasksPage({ searchParams }: PageProps) {
     memberDivisionIds,
     headedDivisionIds,
     pmuTeamMemberIds,
+    // The two Super-Admin-managed grants. Neither carries a division scope:
+    // they reach any task on this page, which is visibility-scoped already.
+    canEditLatestStatus: me.canEditLatestStatus,
+    canScheduleTasks: me.canScheduleTasks,
   };
 
   // The PMU's home-division head is not treated as a whole-team share
@@ -516,12 +529,11 @@ function toLaneBoardTasks(
       needsAttention: formatDue(t.dueDate).tone === 'overdue' || t.priority === 'urgent',
       latestStatus: t.latestStatus,
       jsComment: t.jsComment,
-      canEditStatus:
-        canManageTask(permCaller, {
-          ownerId: t.ownerId,
-          createdById: t.createdById,
-          divisionId: t.divisionId,
-        }) || contributorTaskIds.has(t.id),
+      canEditStatus: canEditLatestStatus(
+        permCaller,
+        { ownerId: t.ownerId, createdById: t.createdById, divisionId: t.divisionId },
+        { isContributor: contributorTaskIds.has(t.id) },
+      ),
     };
   });
 }
