@@ -10,7 +10,9 @@ import { prisma } from '@/lib/db';
 import { formatDue, initialsOf } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import {
+  canEditLatestStatus,
   canManageTask,
+  canSetJsPriorityLane,
   canSharePmuTeam,
   canTransferTaskTo,
   fetchTransferTargets,
@@ -109,6 +111,8 @@ export default async function TaskDetailPage({ params }: PageProps) {
       pmuId: true,
       pmuRole: true,
       canAddJsComment: true,
+      canEditLatestStatus: true,
+      canScheduleTasks: true,
     },
   });
   if (!me) redirect('/login');
@@ -243,6 +247,35 @@ export default async function TaskDetailPage({ params }: PageProps) {
     },
   );
   const canEditFields = canManage;
+  // The task's Status line — the same field, and the same rule, as the Status
+  // shown under each task on the tasks list's lane board.
+  const canEditStatusLine = canEditLatestStatus(
+    {
+      id: session.user.id,
+      isSuperAdmin: session.user.isSuperAdmin,
+      hierarchySlot: session.user.hierarchySlot,
+      memberDivisionIds,
+      headedDivisionIds: actor?.headedDivisionIds ?? [],
+      pmuTeamMemberIds,
+      canEditLatestStatus: me.canEditLatestStatus,
+    },
+    { ownerId: task.ownerId, createdById: task.createdById, divisionId: task.divisionId },
+    { isContributor },
+  );
+  // Who may bucket this task into a lane — the same rule the lane board's
+  // pills use, so the two surfaces agree (this page used to offer it to
+  // Super Admin and OSD alone, while the board and the server already allowed
+  // a Director-grade member or the division's head).
+  const canCurateLane = canSetJsPriorityLane(
+    {
+      isSuperAdmin: session.user.isSuperAdmin,
+      hierarchySlot: session.user.hierarchySlot,
+      memberDivisionIds,
+      headedDivisionIds: actor?.headedDivisionIds ?? [],
+      canScheduleTasks: me.canScheduleTasks,
+    },
+    { divisionId: task.divisionId },
+  );
 
   // JS Comment is JS-office commentary, not a contribution — Super Admin or
   // the can_add_js_comment grant only, unrelated to canEditFields/isContributor.
@@ -654,9 +687,7 @@ export default async function TaskDetailPage({ params }: PageProps) {
           <JsLanePicker
             taskId={task.id}
             current={task.jsPriorityLane as PillJsLane | null}
-            canCurate={
-              session.user.isSuperAdmin || session.user.hierarchySlot === 'osd'
-            }
+            canCurate={canCurateLane}
           />
           {task.milestone ? <Pill variant="milestone" /> : null}
         </div>
@@ -724,7 +755,7 @@ export default async function TaskDetailPage({ params }: PageProps) {
       <SectionLatestStatus
         taskId={task.id}
         latestStatus={task.latestStatus}
-        canEdit={canEditFields || isContributor}
+        canEdit={canEditStatusLine}
       />
 
       <SectionContext

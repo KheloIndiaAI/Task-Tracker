@@ -41,6 +41,8 @@ export type UserRow = {
   canAddJsComment: boolean;
   canGenerateReports: boolean;
   isOrganizationHead: boolean;
+  canEditLatestStatus: boolean;
+  canScheduleTasks: boolean;
   lastLogin: Date | null;
 };
 
@@ -278,6 +280,8 @@ function rowToDefaults(u: UserRow): UserFormDefaults {
     canAddJsComment: u.canAddJsComment,
     canGenerateReports: u.canGenerateReports,
     isOrganizationHead: u.isOrganizationHead,
+    canEditLatestStatus: u.canEditLatestStatus,
+    canScheduleTasks: u.canScheduleTasks,
   };
 }
 

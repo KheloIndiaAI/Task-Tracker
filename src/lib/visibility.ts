@@ -532,6 +532,26 @@ export async function fetchOpenTasksByDivision(
 }
 
 /**
+ * Whether this caller may READ one particular task — the same scoper every
+ * list uses, asked about a single row.
+ *
+ * The two Super-Admin-managed grants that carry no division scope of their own
+ * — "Status access" (can_edit_latest_status) and "Task scheduling access"
+ * (can_schedule_tasks) — reach only tasks their holder can already see, so the
+ * server actions establish that here before letting either grant decide.
+ */
+export async function isTaskVisibleTo(callerId: string, taskId: string): Promise<boolean> {
+  const me = await prisma.user.findUnique({ where: { id: callerId }, select: STAT_CALLER_SELECT });
+  if (!me) return false;
+  const scope = await buildVisibilityClauses(me);
+  const found = await prisma.task.findFirst({
+    where: { id: taskId, AND: visibilityAnd(scope) },
+    select: { id: true },
+  });
+  return found !== null;
+}
+
+/**
  * The divisions a task picker offers this caller — flat, and scoped to who is
  * signed in:
  *

@@ -355,6 +355,8 @@ export default async function StructurePage({ searchParams }: PageProps) {
         canAddJsComment: selectedUser.canAddJsComment,
         canGenerateReports: selectedUser.canGenerateReports,
         isOrganizationHead: selectedUser.isOrganizationHead,
+        canEditLatestStatus: selectedUser.canEditLatestStatus,
+        canScheduleTasks: selectedUser.canScheduleTasks,
       },
     };
   }

@@ -6,6 +6,7 @@ import {
   canCreateTaskOutsideOwnDivisions,
   canDelegateDivision,
   canEditDivisionNotice,
+  canEditLatestStatus,
   canManageTask,
   canSetJsPriorityLane,
   canSharePmuTeam,
@@ -589,5 +590,65 @@ describe('isEligibleDelegate', () => {
     expect(isEligibleDelegate(person({ divisionId: KI }), ctx)).toBe(false);
     expect(isEligibleDelegate(person({ id: 'zuber', divisionId: NSDF }), ctx)).toBe(false);
     expect(isEligibleDelegate(person({ divisionId: NSDF, isActive: false }), ctx)).toBe(false);
+  });
+});
+
+describe('the two Super-Admin grants over other peoples tasks (2026-09-23)', () => {
+  // Someone with no role, no membership in the task's division and no
+  // contribution to it: everything below turns on the grants alone.
+  const outsider = (overrides: Record<string, unknown> = {}) => ({
+    id: 'outsider',
+    isSuperAdmin: false,
+    hierarchySlot: 'aso',
+    memberDivisionIds: [KI],
+    headedDivisionIds: [] as string[],
+    ...overrides,
+  });
+  const task = { ownerId: 'someone', createdById: 'someone-else', divisionId: NSDF };
+
+  describe('Task scheduling access — the D/W/F/M/Watchlist lanes', () => {
+    it('lets the holder bucket a task in any division', () => {
+      expect(canSetJsPriorityLane(outsider({ canScheduleTasks: true }), { divisionId: NSDF })).toBe(true);
+      expect(canSetJsPriorityLane(outsider({ canScheduleTasks: true }), { divisionId: MEDIA })).toBe(true);
+    });
+
+    it('changes nothing without it', () => {
+      expect(canSetJsPriorityLane(outsider(), { divisionId: NSDF })).toBe(false);
+      expect(canSetJsPriorityLane(outsider({ canScheduleTasks: false }), { divisionId: KI })).toBe(false);
+    });
+
+    it('leaves the existing ways in untouched', () => {
+      expect(canSetJsPriorityLane(outsider({ isSuperAdmin: true }), { divisionId: NSDF })).toBe(true);
+      expect(canSetJsPriorityLane(outsider({ hierarchySlot: 'osd' }), { divisionId: NSDF })).toBe(true);
+      expect(canSetJsPriorityLane(outsider({ hierarchySlot: 'director' }), { divisionId: KI })).toBe(true);
+      expect(canSetJsPriorityLane(outsider({ headedDivisionIds: [NSDF] }), { divisionId: NSDF })).toBe(true);
+    });
+  });
+
+  describe('Status access — the Status line', () => {
+    it('lets the holder write the status of a task they are nothing to', () => {
+      expect(canEditLatestStatus(outsider({ canEditLatestStatus: true }), task)).toBe(true);
+    });
+
+    it('changes nothing without it', () => {
+      expect(canEditLatestStatus(outsider(), task)).toBe(false);
+      expect(canEditLatestStatus(outsider({ canEditLatestStatus: false }), task)).toBe(false);
+    });
+
+    it('keeps the people who could already write it', () => {
+      // A contributor: an explicit collaborator, or an @mention.
+      expect(canEditLatestStatus(outsider(), task, { isContributor: true })).toBe(true);
+      // The owner, and anyone who manages the task.
+      expect(canEditLatestStatus(outsider({ id: 'someone' }), task)).toBe(true);
+      expect(canEditLatestStatus(outsider({ headedDivisionIds: [NSDF] }), task)).toBe(true);
+      expect(canEditLatestStatus(outsider({ hierarchySlot: 'osd' }), task)).toBe(true);
+    });
+
+    it('is the Status line only — it is not task management', () => {
+      const holder = outsider({ canEditLatestStatus: true });
+      expect(canManageTask(holder, task)).toBe(false);
+      expect(canSetJsPriorityLane(holder, { divisionId: NSDF })).toBe(false);
+      expect(canSharePmuTeam(holder, { divisionId: NSDF, kind: 'division' })).toBe(false);
+    });
   });
 });

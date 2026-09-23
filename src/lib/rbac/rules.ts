@@ -201,11 +201,20 @@ export function canSetJsPriorityLane(
     /** Home + admin-granted divisions — scopes a Director to their own. */
     memberDivisionIds: string[];
     headedDivisionIds: string[];
+    /**
+     * The Super-Admin-managed "Task scheduling access" grant
+     * (users.can_schedule_tasks). It carries no division scope of its own:
+     * the holder schedules any task they can already SEE, so every caller
+     * must have established that first — the lists and the task page are
+     * visibility-scoped already, and the server action checks it explicitly.
+     */
+    canScheduleTasks?: boolean;
   },
   task: { divisionId: string },
 ): boolean {
   if (caller.isSuperAdmin) return true;
   if (caller.hierarchySlot === 'osd') return true;
+  if (caller.canScheduleTasks) return true;
   if (isDirectorGrade(caller.hierarchySlot) && caller.memberDivisionIds.includes(task.divisionId)) {
     return true;
   }
@@ -323,6 +332,41 @@ export function canManageTask(
   if (caller.headedDivisionIds.includes(task.divisionId)) return true;
   // A PMU team leader — over any task owned by someone on their team.
   return caller.pmuTeamMemberIds?.includes(task.ownerId) ?? false;
+}
+
+/**
+ * Who may write a task's **Status line** — `tasks.latest_status`, shown under
+ * each task on the Daily/Weekly/Fortnight/Monthly board and as "Latest status"
+ * on the task page.
+ *
+ * Anyone who can manage the task (owner, creator, head, Director grade, OSD,
+ * JS, Super Admin, PMU team head), anyone contributing to it (an explicit
+ * collaborator or someone @mentioned in the discussion — the caller resolves
+ * that and passes `isContributor`), and anyone carrying the Super-Admin-managed
+ * "Status access" grant (users.can_edit_latest_status).
+ *
+ * The grant has no division scope of its own: its holder writes the status of
+ * any task they can already SEE, so the caller must have established that
+ * first — the lists and the task page are visibility-scoped already, and
+ * updateTaskFieldsAction checks it explicitly. It is the Status line only:
+ * nothing else on the task opens up with it.
+ */
+export function canEditLatestStatus(
+  caller: {
+    id: string;
+    isSuperAdmin: boolean;
+    hierarchySlot: string;
+    memberDivisionIds: string[];
+    headedDivisionIds: string[];
+    pmuTeamMemberIds?: string[];
+    canEditLatestStatus?: boolean;
+  },
+  task: { ownerId: string; createdById: string; divisionId: string },
+  opts: { isContributor?: boolean } = {},
+): boolean {
+  if (caller.canEditLatestStatus) return true;
+  if (opts.isContributor) return true;
+  return canManageTask(caller, task);
 }
 
 /**
