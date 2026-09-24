@@ -44,7 +44,8 @@ export const authConfig = {
         pathname.startsWith('/icons/') ||
         pathname.startsWith('/splash/') ||
         pathname.startsWith('/api/auth') ||
-        pathname.startsWith('/api/cron');
+        pathname.startsWith('/api/cron') ||
+        pathname.startsWith('/s/');
 
       if (isOnPublicRoute) return true;
 

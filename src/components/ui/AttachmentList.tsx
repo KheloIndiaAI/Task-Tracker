@@ -318,7 +318,7 @@ function AttachmentRowCard({
       }
       const { url, fileName } = (await res.json()) as { url: string; fileName: string };
       const sizeStr = row.sizeBytes != null ? ` (${formatBytes(row.sizeBytes)})` : '';
-      const text = `*MYAS Task Tracker*\nFile: ${fileName}${sizeStr}\nDownload: ${url}`;
+      const text = `*MYAS Task Tracker*\nFile: ${fileName}${sizeStr}\nOpen: ${url}`;
       window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
     } catch (err) {
       console.error('WhatsApp share failed:', err);

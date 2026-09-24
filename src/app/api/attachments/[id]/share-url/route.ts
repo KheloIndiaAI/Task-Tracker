@@ -1,9 +1,10 @@
+import { randomBytes } from 'node:crypto';
+
 import { NextResponse } from 'next/server';
 
 import { auth } from '@/lib/auth';
 import { logError } from '@/lib/utils/log';
 import { prisma } from '@/lib/db';
-import { isS3Configured, presignShare } from '@/lib/s3';
 import { buildTfVisibilityClause } from '@/lib/timeline-files';
 import { buildVisibilityClauses, visibilityAnd } from '@/lib/visibility';
 
@@ -30,7 +31,7 @@ function isSafeDriveLinkUrl(url: string): boolean {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: { id: string } },
 ) {
   const session = await auth();
@@ -51,6 +52,7 @@ export async function GET(
       fileUrl: true,
       fileName: true,
       source: true,
+      shareToken: true,
     },
   });
   if (!att) return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -91,21 +93,23 @@ export async function GET(
     return NextResponse.json({ url: att.fileUrl, fileName: att.fileName });
   }
 
-  if (!isS3Configured()) {
-    return NextResponse.json(
-      { error: 'Storage is not configured on this server.' },
-      { status: 503 },
-    );
-  }
-
+  // Uploaded file: ensure a permanent, unguessable share token exists, then
+  // return a SHORT link. The public /s/<token> route presigns on the fly and
+  // redirects, so the AWS signature never leaves the server and the link
+  // stays short and stable.
   try {
-    const url = await presignShare({
-      key: att.fileUrl,
-      filename: att.fileName,
-    });
-    return NextResponse.json({ url, fileName: att.fileName });
+    let token = att.shareToken;
+    if (!token) {
+      token = randomBytes(16).toString('base64url'); // 128-bit, url-safe
+      await prisma.attachment.update({
+        where: { id: att.id },
+        data: { shareToken: token },
+      });
+    }
+    const origin = process.env.AUTH_URL ?? new URL(request.url).origin;
+    return NextResponse.json({ url: `${origin}/s/${token}`, fileName: att.fileName });
   } catch (err) {
-    logError('presignShare failed', err);
+    logError('share link generation failed', err);
     return NextResponse.json({ error: 'Could not generate URL' }, { status: 500 });
   }
 }

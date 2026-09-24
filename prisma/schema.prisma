@@ -639,6 +639,7 @@ model Attachment {
   source       AttachmentSource
   uploadedById String              @map("uploaded_by") @db.Uuid
   uploadedAt   DateTime            @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+  shareToken   String?             @unique @map("share_token")
 
   uploadedBy            User           @relation("AttachmentUploadedBy", fields: [uploadedById], references: [id])
   timelineFilesActioned TimelineFile[] @relation("TimelineFileActionDocument")
