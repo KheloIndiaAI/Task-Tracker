@@ -403,6 +403,30 @@ function subtaskDocumentName(displayName: string, originalName: string): string 
 }
 
 /**
+ * Upload each queued document to a freshly created subtask, one after another.
+ * Returns the ones that failed — the subtask itself is already saved, so a
+ * single bad file must not cost the others their upload.
+ */
+async function uploadSubtaskDocuments(
+  subtaskId: string,
+  files: File[],
+  displayName: string,
+): Promise<{ name: string; reason: string }[]> {
+  const failed: { name: string; reason: string }[] = [];
+  for (const file of files) {
+    try {
+      await uploadSubtaskDocument(subtaskId, file, displayName);
+    } catch (err) {
+      failed.push({
+        name: file.name,
+        reason: err instanceof Error ? err.message : 'upload failed',
+      });
+    }
+  }
+  return failed;
+}
+
+/**
  * Upload one document to a freshly created subtask, reusing the standard
  * presign → PUT → register flow (scope 'task', parentId = the subtask id).
  * Throws with a user-facing message on any step failing.
@@ -469,21 +493,28 @@ function AddSubtaskForm({
   const [assigneeId, setAssigneeId] = useState('');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
-  const [file, setFile] = useState<File | null>(null);
+  // Documents queued for the subtask being added — uploaded one after another
+  // once it exists, in the order they were picked.
+  const [files, setFiles] = useState<File[]>([]);
   const [docName, setDocName] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const onFileChosen = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const chosen = e.target.files?.[0] ?? null;
+  const onFilesChosen = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Materialise the FileList before clearing the input: it is live, so
+    // setting value='' first would leave an empty array and queue nothing.
+    const chosen = e.target.files ? Array.from(e.target.files) : [];
     e.target.value = '';
-    if (chosen && chosen.size > MAX_UPLOAD_BYTES) {
-      setUploadError(`${chosen.name} is over ${formatBytes(MAX_UPLOAD_BYTES)}.`);
+    if (chosen.length === 0) return;
+    const oversize = chosen.find((f) => f.size > MAX_UPLOAD_BYTES);
+    if (oversize) {
+      setUploadError(`${oversize.name} is over ${formatBytes(MAX_UPLOAD_BYTES)}.`);
       return;
     }
     setUploadError(null);
-    setFile(chosen);
+    setFiles((prev) => [...prev, ...chosen]);
   };
+  const removeFile = (index: number) => setFiles((prev) => prev.filter((_, i) => i !== index));
 
   useEffect(() => {
     if (!state.ok) return;
@@ -493,35 +524,32 @@ function AddSubtaskForm({
       setAssigneeId('');
       setDate('');
       setTime('');
-      setFile(null);
+      setFiles([]);
       setDocName('');
       setUploadError(null);
     };
-    // A document was queued — attach it to the new subtask, then refresh so it
-    // shows on the panel. The subtask itself was already created and the parent
-    // revalidated server-side, so on upload failure we still close (re-submitting
-    // would duplicate the subtask) and surface the error.
-    if (file && state.subtaskId) {
+    // Documents were queued — attach them to the new subtask, then refresh so
+    // they show on the panel. The subtask itself was already created and the
+    // parent revalidated server-side, so even when an upload fails we still
+    // close (re-submitting would duplicate the subtask) and name what failed.
+    if (files.length > 0 && state.subtaskId) {
       setUploading(true);
-      uploadSubtaskDocument(state.subtaskId, file, docName)
-        .then(() => {
+      // Every document is attempted, so one failure does not strand the rest;
+      // whatever did not land is named once at the end. The display name is
+      // only meaningful for a single document — several keep their own names.
+      uploadSubtaskDocuments(state.subtaskId, files, files.length === 1 ? docName : '')
+        .then((failed) => {
           if (cancelled) return;
           setUploading(false);
           reset();
           router.refresh();
           onDone();
-        })
-        .catch((err) => {
-          if (cancelled) return;
-          setUploading(false);
-          reset();
-          router.refresh();
-          onDone();
-          alert(
-            err instanceof Error
-              ? `Subtask added, but the document did not upload: ${err.message}`
-              : 'Subtask added, but the document did not upload.',
-          );
+          if (failed.length > 0) {
+            alert(
+              `Subtask added, but ${failed.length === 1 ? 'this document' : 'these documents'} did not upload: ` +
+                failed.map((f) => `${f.name} (${f.reason})`).join(', '),
+            );
+          }
         });
     } else {
       reset();
@@ -566,33 +594,50 @@ function AddSubtaskForm({
         maxDate={parentDueMaxDate(parentDueDate)}
       />
 
-      {/* Optional document — uploaded to the subtask and shown on this panel. */}
+      {/* Optional documents — uploaded to the subtask and shown on this panel. */}
       <div className="flex flex-col gap-1.5">
         <span className="text-[10px] font-medium text-ink-3">
-          Document <span className="font-normal text-ink-4">· optional</span>
+          Documents <span className="font-normal text-ink-4">· optional</span>
         </span>
-        {file ? (
+        {files.length > 0 ? (
           <div className="flex flex-col gap-1.5">
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-line bg-bg">
-              <i className="ti ti-paperclip text-[13px] text-ink-3 shrink-0" aria-hidden="true" />
-              <span className="flex-1 min-w-0 truncate text-[12px] text-ink">{file.name}</span>
-              <span className="text-[10px] text-ink-4 shrink-0">{formatBytes(file.size)}</span>
-              <button
-                type="button"
-                onClick={() => setFile(null)}
-                className="shrink-0 text-ink-3 hover:text-urgent transition-colors"
-                aria-label="Remove document"
+            {files.map((file, index) => (
+              <div
+                key={`${file.name}-${file.size}-${file.lastModified}-${index}`}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg border border-line bg-bg"
               >
-                <i className="ti ti-x text-[13px]" aria-hidden="true" />
-              </button>
-            </div>
-            <input
-              value={docName}
-              onChange={(e) => setDocName(e.target.value)}
-              maxLength={196}
-              placeholder="Display name · optional"
-              className={fieldCn}
-            />
+                <i className="ti ti-paperclip text-[13px] text-ink-3 shrink-0" aria-hidden="true" />
+                <span className="flex-1 min-w-0 truncate text-[12px] text-ink">{file.name}</span>
+                <span className="text-[10px] text-ink-4 shrink-0">{formatBytes(file.size)}</span>
+                <button
+                  type="button"
+                  onClick={() => removeFile(index)}
+                  className="shrink-0 text-ink-3 hover:text-urgent transition-colors"
+                  aria-label={`Remove ${file.name}`}
+                >
+                  <i className="ti ti-x text-[13px]" aria-hidden="true" />
+                </button>
+              </div>
+            ))}
+            {/* A display name renames the one document; several keep their own. */}
+            {files.length === 1 ? (
+              <input
+                value={docName}
+                onChange={(e) => setDocName(e.target.value)}
+                maxLength={196}
+                placeholder="Display name · optional"
+                className={fieldCn}
+              />
+            ) : null}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!s3Ready}
+              className="inline-flex items-center gap-1.5 self-start px-3 py-1.5 rounded-lg border border-line bg-panel text-[12px] font-medium text-ink-2 transition-colors hover:border-ink-4 hover:text-ink"
+            >
+              <i className="ti ti-plus text-[13px]" aria-hidden="true" />
+              Add another
+            </button>
           </div>
         ) : (
           <button
@@ -612,13 +657,14 @@ function AddSubtaskForm({
             )}
           >
             <i className="ti ti-cloud-upload text-[14px]" aria-hidden="true" />
-            Attach document
+            Attach documents
           </button>
         )}
         <input
           ref={fileInputRef}
           type="file"
-          onChange={onFileChosen}
+          multiple
+          onChange={onFilesChosen}
           className="sr-only"
           aria-hidden="true"
         />

@@ -125,6 +125,7 @@ verification never persists test rows.
 - Bulk import sub-section — done
 - Recurrence editor, TF more-menu, Marked-to editor, Mention picker, Global search — done
 - S3 attachments end-to-end (presign + register + delete + Drive-link fallback) — done; activates the moment `S3_*` env vars are present
+- **Every uploader takes several files at once** (2026-09-25) — the task page, Timeline File, Document Centre and Business Card lists, Quick Create, and the subtask document field. One pick queues them all, each row can be removed before saving, and they upload one after another (presign → PUT → register per file) with progress naming the file and its place in the run. A file over the size cap refuses the whole pick and names it; on the Timeline File / Document Centre / Business Card dialogs and Quick Create the first failure stops the run and leaves the rest queued, so nothing uploads twice. The bulk import CSV stays single by nature.
 - Mobile gestures — swipe-to-mark-read on `/notifications` rows, pull-to-refresh on `/tasks` — done (swipe-to-archive removed with the Archive feature)
 - Performance hardening — `loading.tsx` skeletons on `/tasks`, `/timeline-files`, `/admin/audit`, `/search`; index audit complete (see [docs/PERF_NOTES.md](docs/PERF_NOTES.md))
 - Subtask user assignment with datetime deadline — assignees from same division, deadline validated against parent task — done
