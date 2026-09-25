@@ -21,6 +21,7 @@ import {
   INITIAL_CREATE_STATE,
   type CreateTaskState,
 } from '@/app/actions/states';
+import { guessContentType } from '@/lib/mime';
 import { formatBytes, MAX_UPLOAD_BYTES } from '@/lib/s3';
 import { cn } from '@/lib/utils';
 
@@ -271,90 +272,118 @@ function QuickCreateForm({
     () => createTargets.find((t) => t.id === divisionId)?.kind === 'pmu',
   );
 
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  // Files queued for the task being created — uploaded one after another once
+  // it exists, in the order they were picked.
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  // Set only when the task was created but a file did not upload. The sheet
+  // stays open on what is left, so the failure is visible and Save cannot
+  // create the task a second time.
+  const [createdTaskId, setCreatedTaskId] = useState<string | null>(null);
 
-  // After task creation succeeds, upload the pending file if any, then close.
+  // After task creation succeeds, upload whatever was queued, then close.
   useEffect(() => {
     if (!state.ok) return;
     const taskId = state.taskId;
 
-    if (pendingFile && taskId) {
-      uploadFileToTask(pendingFile, taskId).then(() => {
-        formRef.current?.reset();
-        setPendingFile(null);
-        setUploadStatus(null);
-        onSuccess();
-      });
+    if (pendingFiles.length > 0 && taskId) {
+      void uploadFilesToTask(pendingFiles, taskId);
     } else {
       formRef.current?.reset();
-      setPendingFile(null);
+      setPendingFiles([]);
       onSuccess();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.ok, state.epoch]);
 
-  async function uploadFileToTask(file: File, taskId: string) {
-    setUploadStatus(`Uploading ${file.name}…`);
+  /**
+   * Upload the queue to the task, one file at a time (presign → PUT →
+   * register, the same flow every other uploader uses). Each file leaves the
+   * queue the moment it lands, so a retry after a failure never uploads the
+   * same file twice. The first failure stops the run and keeps the sheet open
+   * on the files that are left.
+   */
+  async function uploadFilesToTask(files: File[], taskId: string) {
     setUploadError(null);
+    const total = files.length;
     try {
-      const presignRes = await fetch('/api/attachments/upload-url', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          scope: 'task',
-          parentId: taskId,
-          filename: file.name,
-          contentType: file.type || 'application/octet-stream',
-          sizeBytes: file.size,
-        }),
-      });
-      if (!presignRes.ok) {
-        const body = await presignRes.json().catch(() => ({}));
-        throw new Error(body.error ?? 'Could not start upload.');
-      }
-      const { key, url } = (await presignRes.json()) as { key: string; url: string };
+      for (let i = 0; i < total; i += 1) {
+        const file = files[i];
+        setUploadStatus(
+          total > 1
+            ? `Uploading ${file.name} (${i + 1} of ${total})…`
+            : `Uploading ${file.name}…`,
+        );
+        const contentType = guessContentType(file.name, file.type);
+        const presignRes = await fetch('/api/attachments/upload-url', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            scope: 'task',
+            parentId: taskId,
+            filename: file.name,
+            contentType,
+            sizeBytes: file.size,
+          }),
+        });
+        if (!presignRes.ok) {
+          const body = await presignRes.json().catch(() => ({}));
+          throw new Error(body.error ?? 'Could not start upload.');
+        }
+        const { key, url } = (await presignRes.json()) as { key: string; url: string };
 
-      const putRes = await fetch(url, {
-        method: 'PUT',
-        headers: { 'content-type': file.type || 'application/octet-stream' },
-        body: file,
-      });
-      if (!putRes.ok) {
-        throw new Error(`Upload failed (${putRes.status}).`);
-      }
+        const putRes = await fetch(url, {
+          method: 'PUT',
+          headers: { 'content-type': contentType },
+          body: file,
+        });
+        if (!putRes.ok) {
+          throw new Error(`Upload failed (${putRes.status}).`);
+        }
 
-      const fd = new FormData();
-      fd.set('scope', 'task');
-      fd.set('parentId', taskId);
-      fd.set('source', 'uploaded');
-      fd.set('key', key);
-      fd.set('fileName', file.name);
-      fd.set('mimeType', file.type || '');
-      fd.set('sizeBytes', String(file.size));
-      const registered = await registerAttachmentAction(undefined, fd);
-      if (!registered.ok) {
-        throw new Error(registered.error ?? 'Could not save the attachment.');
+        const fd = new FormData();
+        fd.set('scope', 'task');
+        fd.set('parentId', taskId);
+        fd.set('source', 'uploaded');
+        fd.set('key', key);
+        fd.set('fileName', file.name);
+        fd.set('mimeType', contentType);
+        fd.set('sizeBytes', String(file.size));
+        const registered = await registerAttachmentAction(undefined, fd);
+        if (!registered.ok) {
+          throw new Error(registered.error ?? 'Could not save the attachment.');
+        }
+        setPendingFiles((prev) => prev.filter((f) => f !== file));
       }
+      formRef.current?.reset();
+      setPendingFiles([]);
+      setUploadStatus(null);
+      onSuccess();
     } catch (err) {
       console.error('Post-create upload failed:', err);
+      setCreatedTaskId(taskId);
+      setUploadStatus(null);
       setUploadError(err instanceof Error ? err.message : 'Upload failed.');
     }
-    setUploadStatus(null);
   }
 
-  const onFileChosen = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const onFilesChosen = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Materialise the FileList before clearing the input: it is live, so
+    // setting value='' first would leave an empty array and queue nothing.
+    const chosen = e.target.files ? Array.from(e.target.files) : [];
     e.target.value = '';
-    if (!file) return;
-    if (file.size > MAX_UPLOAD_BYTES) {
-      setUploadError(`File is over ${formatBytes(MAX_UPLOAD_BYTES)}.`);
+    if (chosen.length === 0) return;
+    const oversize = chosen.find((f) => f.size > MAX_UPLOAD_BYTES);
+    if (oversize) {
+      setUploadError(`${oversize.name} is over ${formatBytes(MAX_UPLOAD_BYTES)}.`);
       return;
     }
     setUploadError(null);
-    setPendingFile(file);
+    setPendingFiles((prev) => [...prev, ...chosen]);
   };
+  const removePendingFile = (index: number) =>
+    setPendingFiles((prev) => prev.filter((_, i) => i !== index));
 
   // Every change of target goes through here, so an owner, sub-division or
   // PMU-share choice made for one board never rides along to another.
@@ -729,39 +758,49 @@ function QuickCreateForm({
                 )}
               >
                 <i className="ti ti-cloud-upload text-[15px]" aria-hidden="true" />
-                Upload file
+                Upload files
               </button>
               <input
                 ref={fileInputRef}
                 type="file"
-                onChange={onFileChosen}
+                multiple
+                onChange={onFilesChosen}
                 className="sr-only"
                 aria-hidden="true"
               />
             </div>
 
-            {pendingFile ? (
-              <div className="mt-2 flex items-center gap-2 px-3 py-2 bg-bg border border-line rounded-lg">
-                <i className="ti ti-file text-[14px] text-ink-2" aria-hidden="true" />
-                <span className="flex-1 min-w-0 text-[12px] text-ink truncate">
-                  {pendingFile.name}
-                </span>
-                <span className="text-[10px] text-ink-3 shrink-0">
-                  {formatBytes(pendingFile.size)}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setPendingFile(null)}
-                  aria-label="Remove file"
-                  className="w-6 h-6 grid place-items-center rounded text-ink-3 hover:text-urgent shrink-0"
-                >
-                  <i className="ti ti-x text-[12px]" aria-hidden="true" />
-                </button>
-              </div>
+            {pendingFiles.length > 0 ? (
+              <ul className="mt-2 flex flex-col gap-1.5">
+                {pendingFiles.map((file, index) => (
+                  <li
+                    key={`${file.name}-${file.size}-${file.lastModified}-${index}`}
+                    className="flex items-center gap-2 px-3 py-2 bg-bg border border-line rounded-lg"
+                  >
+                    <i className="ti ti-file text-[14px] text-ink-2 shrink-0" aria-hidden="true" />
+                    <span className="flex-1 min-w-0 text-[12px] text-ink truncate">{file.name}</span>
+                    <span className="text-[10px] text-ink-3 shrink-0">{formatBytes(file.size)}</span>
+                    <button
+                      type="button"
+                      onClick={() => removePendingFile(index)}
+                      aria-label={`Remove ${file.name}`}
+                      className="w-6 h-6 grid place-items-center rounded text-ink-3 hover:text-urgent shrink-0"
+                    >
+                      <i className="ti ti-x text-[12px]" aria-hidden="true" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
             ) : null}
 
             {uploadError ? (
-              <p className="text-[11px] text-urgent mt-1">{uploadError}</p>
+              <p className="text-[11px] text-urgent mt-1">
+                {createdTaskId ? 'Task saved. ' : ''}
+                {uploadError}
+                {createdTaskId && pendingFiles.length > 0
+                  ? ` ${pendingFiles.length} ${pendingFiles.length === 1 ? 'file' : 'files'} still to upload — retry below, or add them from the task.`
+                  : ''}
+              </p>
             ) : null}
           </Field>
 
@@ -799,16 +838,29 @@ function QuickCreateForm({
         </p>
       ) : null}
 
-      {/* Actions */}
+      {/* Actions. Once the task exists but a file did not upload, Save would
+          create a second task — so it becomes Retry upload over what is left,
+          and Cancel becomes Close. */}
       <div className="flex gap-2 mt-2">
         <button
           type="button"
           onClick={onSuccess}
           className="flex-1 py-3 rounded-lg border border-line text-[14px] font-medium text-ink-2 hover:bg-line-2 transition-colors"
         >
-          Cancel
+          {createdTaskId ? 'Close' : 'Cancel'}
         </button>
-        <SaveButton uploading={!!uploadStatus} />
+        {createdTaskId ? (
+          <button
+            type="button"
+            onClick={() => void uploadFilesToTask(pendingFiles, createdTaskId)}
+            disabled={!!uploadStatus || pendingFiles.length === 0}
+            className="flex-1 py-3 rounded-lg bg-ink text-onink text-[14px] font-medium transition-opacity disabled:opacity-60"
+          >
+            {uploadStatus ? 'Uploading…' : 'Retry upload'}
+          </button>
+        ) : (
+          <SaveButton uploading={!!uploadStatus} />
+        )}
       </div>
     </form>
   );
