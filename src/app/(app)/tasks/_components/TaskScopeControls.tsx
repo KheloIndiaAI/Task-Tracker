@@ -36,8 +36,14 @@ const PILL_IDLE = 'bg-panel text-ink-2 border-line hover:border-ink-4';
  * The row also once carried status filter chips, a Sort dropdown and a
  * Group-by-division toggle — all removed, each because it only ever showed
  * the state that was already the default.
+ *
+ * A Super Admin has a second row below, the organization pills
+ * (OrganizationPills, `?org=`). Neither pill here touches it: "All tasks"
+ * means every task of the organization being shown, and it writes that
+ * organization (`organizationParam`) back so the lit one stays lit — even when
+ * it was only implied by the division being left.
  */
-export function TaskScopeControls() {
+export function TaskScopeControls({ organizationParam }: { organizationParam?: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -57,6 +63,7 @@ export function TaskScopeControls() {
     const params = new URLSearchParams(searchParams.toString());
     params.delete('division');
     params.delete('filter');
+    if (organizationParam) params.set('org', organizationParam);
     push(params);
   };
 

@@ -3,13 +3,17 @@ import { describe, expect, it } from 'vitest';
 import {
   allowedParentKinds,
   expandHeadedToDescendants,
+  findMinistryHeadquarter,
   groupByPlacement,
   groupDivisionsByOrganization,
   isStructuralKind,
   isTaskBoardKind,
+  MINISTRY_HEADQUARTER_NAME,
   organizationOf,
+  organizationsWithTaskBoards,
   placementOf,
   STRUCTURE_KINDS,
+  taskBoardIdsInOrganization,
   type NamedStructureNode,
   type StructureTreeNode,
 } from '@/lib/structure-shared';
@@ -352,5 +356,129 @@ describe('groupByPlacement / placementOf — Quick Create targets', () => {
     expect(
       groupByPlacement([], NODES, { includeEmptyOrganizations: true }).map((o) => o.organization?.id),
     ).toEqual(['HQ', 'SAI', 'EMPTY']);
+  });
+});
+
+describe('taskBoardIdsInOrganization — what an organization pill shows', () => {
+  it('takes every division in the organization, directly under or through a directorate', () => {
+    expect(sorted(taskBoardIdsInOrganization('HQ', TREE))).toEqual(
+      sorted(['KIS', 'KIS_PMU', 'NSDF', 'NSDF_PMU']),
+    );
+    expect(sorted(taskBoardIdsInOrganization('RC', TREE))).toEqual(
+      sorted(['KIC', 'KIC_PMU', 'STC', 'NCOE', 'KISCE']),
+    );
+  });
+
+  it('places a PMU with its division — by pmu_parent_division_id, or the parent_id fallback', () => {
+    expect(taskBoardIdsInOrganization('HQ', TREE)).toContain('KIS_PMU');
+    expect(taskBoardIdsInOrganization('RC', TREE)).toContain('KIC_PMU');
+    expect(taskBoardIdsInOrganization('RC', TREE)).not.toContain('KIS_PMU');
+  });
+
+  it('returns task boards only — never the organization, a directorate, a sub-division or a section', () => {
+    const all = [...taskBoardIdsInOrganization('HQ', TREE), ...taskBoardIdsInOrganization('RC', TREE)];
+    for (const id of ['HQ', 'RC', 'DIR_N', 'DIR_S', 'COACH', 'NIS_SEC']) {
+      expect(all).not.toContain(id);
+    }
+  });
+
+  it('splits the tree cleanly — every task board in exactly one organization', () => {
+    const hq = taskBoardIdsInOrganization('HQ', TREE);
+    const rc = taskBoardIdsInOrganization('RC', TREE);
+    expect(hq.filter((id) => rc.includes(id))).toEqual([]);
+    const boards = TREE.filter((n) => isTaskBoardKind(n.kind)).map((n) => n.id);
+    expect(sorted([...hq, ...rc])).toEqual(sorted(boards));
+  });
+
+  it('narrows to nothing for an id that is not an organization — never to everything', () => {
+    expect(taskBoardIdsInOrganization('nope', TREE)).toEqual([]);
+    expect(taskBoardIdsInOrganization('KIS', TREE)).toEqual([]);
+    expect(taskBoardIdsInOrganization('DIR_N', TREE)).toEqual([]);
+    expect(taskBoardIdsInOrganization('', TREE)).toEqual([]);
+  });
+
+  it('leaves out a division in no organization, and survives a cycle', () => {
+    const withStrays: StructureTreeNode[] = [
+      ...TREE,
+      node('LEGACY', 'division', null),
+      node('LOOP_A', 'directorate', 'LOOP_B'),
+      node('LOOP_B', 'directorate', 'LOOP_A'),
+      node('STUCK', 'division', 'LOOP_A'),
+    ];
+    const everywhere = [
+      ...taskBoardIdsInOrganization('HQ', withStrays),
+      ...taskBoardIdsInOrganization('RC', withStrays),
+    ];
+    expect(everywhere).not.toContain('LEGACY');
+    expect(everywhere).not.toContain('STUCK');
+  });
+});
+
+describe('organizationsWithTaskBoards — the pills on offer', () => {
+  function named(
+    id: string,
+    name: string,
+    kind: StructureTreeNode['kind'],
+    parentId: string | null,
+    pmuParentDivisionId: string | null = null,
+  ): NamedStructureNode {
+    return { id, name, kind, parentId, pmuParentDivisionId };
+  }
+
+  it('lists organizations holding a division or PMU team, in the order given', () => {
+    const nodes = [
+      named('HQ', 'Ministry Headquarter', 'organization', null),
+      named('SAI', 'SAI', 'organization', null),
+      named('EMPTY', 'New organization', 'organization', null),
+      named('SHELL', 'Directorates only', 'organization', null),
+      named('RC_B', 'RC Bangalore', 'directorate', 'SAI'),
+      named('RC_EMPTY', 'RC Nowhere', 'directorate', 'SHELL'),
+      named('OJS', 'Office of JS', 'division', 'HQ'),
+      named('NCOE_B', 'NCOE', 'division', 'RC_B'),
+    ];
+    // EMPTY has nothing; SHELL has a directorate but no division under it.
+    expect(organizationsWithTaskBoards(nodes)).toEqual([
+      { id: 'HQ', name: 'Ministry Headquarter' },
+      { id: 'SAI', name: 'SAI' },
+    ]);
+  });
+
+  it('never lists a division outside every organization as an organization', () => {
+    const nodes = [
+      named('HQ', 'Ministry Headquarter', 'organization', null),
+      named('OJS', 'Office of JS', 'division', 'HQ'),
+      named('LEGACY', 'Legacy root', 'division', null),
+    ];
+    expect(organizationsWithTaskBoards(nodes)).toEqual([{ id: 'HQ', name: 'Ministry Headquarter' }]);
+  });
+});
+
+describe('findMinistryHeadquarter — the default organization', () => {
+  it('finds it by the name the migration and seeds use', () => {
+    expect(MINISTRY_HEADQUARTER_NAME).toBe('Ministry Headquarter');
+    const orgs = [
+      { id: 'SAI', name: 'SAI' },
+      { id: 'HQ', name: 'Ministry Headquarter' },
+    ];
+    expect(findMinistryHeadquarter(orgs)).toEqual({ id: 'HQ', name: 'Ministry Headquarter' });
+  });
+
+  it('ignores case and surrounding spaces', () => {
+    expect(findMinistryHeadquarter([{ id: 'HQ', name: '  ministry headquarter ' }])?.id).toBe('HQ');
+  });
+
+  it('is null when no organization carries the name — the caller falls back', () => {
+    expect(findMinistryHeadquarter([{ id: 'SAI', name: 'SAI' }])).toBeNull();
+    expect(findMinistryHeadquarter([{ id: 'X', name: 'Ministry Headquarters' }])).toBeNull();
+    expect(findMinistryHeadquarter([])).toBeNull();
+  });
+
+  it('takes the first when two share the name', () => {
+    expect(
+      findMinistryHeadquarter([
+        { id: 'A', name: 'Ministry Headquarter' },
+        { id: 'B', name: 'Ministry Headquarter' },
+      ])?.id,
+    ).toBe('A');
   });
 });

@@ -8,7 +8,14 @@ import { REPORT_CADENCES, type ReportCadence } from '@/lib/reports-shared';
 export type ReportScope = 'scheduled' | 'all';
 
 export type ReportFilters = {
-  /** Empty = every division the caller can see. */
+  /**
+   * The organization chosen in the dialog, as the division / PMU-team ids
+   * inside it (organization-scope.ts). `undefined` = every organization; an
+   * empty list = nothing. ANDed with `divisionIds` and with visibility, so it
+   * only ever narrows.
+   */
+  scopeDivisionIds?: string[];
+  /** Empty = every division the caller can see (within the organization, when one is chosen). */
   divisionIds: string[];
   /**
    * Empty = every priority. Choosing one or more here is a precise filter —
@@ -60,8 +67,8 @@ function divisionGroupRank(kind: string, name: string): number {
  * grants (Super Admin / OSD, division head, or the explicit
  * can_generate_reports flag) let them open the report dialog in the first
  * place. Leaving Division unchecked in the filter dialog therefore means
- * "every division this caller can see", not the whole ministry for a
- * non-leadership grant-holder.
+ * "every division this caller can see" in the chosen organization, not the
+ * whole ministry for a non-leadership grant-holder.
  *
  * Grouping and division ordering mirror groupTasksByDivision in
  * tasks/page.tsx (Media & IT sinks below the other divisions, PMUs follow
@@ -88,7 +95,12 @@ export async function fetchReportDivisionGroups(
     // Matches the list's own "Active tasks" default — a priority report is
     // about ongoing work, not a record of what is already finished.
     status: { not: 'completed' },
-    AND: visibilityAnd(visibilityClauses),
+    // The organization rides in AND, not as a second top-level `divisionId`
+    // key, so it can never overwrite the division pick beside it.
+    AND: [
+      ...visibilityAnd(visibilityClauses),
+      ...(filters.scopeDivisionIds ? [{ divisionId: { in: filters.scopeDivisionIds } }] : []),
+    ],
     ...(filters.divisionIds.length > 0 ? { divisionId: { in: filters.divisionIds } } : {}),
     ...(laneCondition ? { jsPriorityLane: laneCondition } : {}),
   };
