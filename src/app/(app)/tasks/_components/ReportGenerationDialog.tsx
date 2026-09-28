@@ -3,14 +3,30 @@
 import { useState } from 'react';
 
 import { Sheet } from '@/components/ui';
+import { ALL_ORGANIZATIONS, ALL_ORGANIZATIONS_LABEL } from '@/lib/organization-scope-shared';
 import { REPORT_CADENCES, REPORT_CADENCE_LABEL, type ReportCadence } from '@/lib/reports-shared';
 import { cn } from '@/lib/utils';
 
 type ReportDivisionOption = { id: string; name: string };
 
-type ReportGenerationDialogProps = {
-  divisions: ReportDivisionOption[];
+type ReportOrganizationOption = {
+  id: string;
+  name: string;
+  /** Which of `divisions` sit in this organization. */
+  divisionIds: string[];
 };
+
+type ReportGenerationDialogProps = {
+  /** Every division / PMU team the caller may report on — flat, in list order. */
+  divisions: ReportDivisionOption[];
+  /** The organizations holding at least one of them, in tree order. */
+  organizations: ReportOrganizationOption[];
+  /** An organization id, or 'all' — Ministry Headquarter when it is offered. */
+  defaultOrganizationId: string;
+};
+
+const ORGANIZATION_SELECT =
+  'w-full px-3 py-2 rounded-lg border border-line bg-panel text-[12.5px] text-ink outline-none focus:border-ink disabled:bg-bg disabled:text-ink-2 disabled:opacity-100';
 
 /**
  * Trigger + filter popup for the Priority Task Report PDF. Generating does
@@ -21,13 +37,26 @@ type ReportGenerationDialogProps = {
  * needed, and the session cookie rides along automatically since this is a
  * same-origin top-level GET.
  *
+ * Organization comes first and opens on Ministry Headquarter. It narrows the
+ * Division list below to that organization's divisions and PMU teams, and the
+ * report to them (`org=`). "All organizations" is the report as it was before
+ * the dropdown — offered whenever there is more than one place to choose from.
+ * With a single organization the dropdown stays on screen, locked, so the
+ * reader always sees what the report covers — Quick Create's rule. Changing it
+ * clears any divisions picked in the organization before.
+ *
  * Division and Priority are both multi-select, each with its own explicit
  * "All" checkbox/pill — checked exactly when nothing specific is picked, and
  * picking it clears any specific selection back to "no filter" (every
  * division / every priority). Picking a specific one always drops "All".
  */
-export function ReportGenerationDialog({ divisions }: ReportGenerationDialogProps) {
+export function ReportGenerationDialog({
+  divisions,
+  organizations,
+  defaultOrganizationId,
+}: ReportGenerationDialogProps) {
   const [open, setOpen] = useState(false);
+  const [organizationId, setOrganizationId] = useState(defaultOrganizationId);
   const [divisionIds, setDivisionIds] = useState<Set<string>>(new Set());
   const [priorities, setPriorities] = useState<Set<ReportCadence>>(new Set());
   const [scope, setScope] = useState<'scheduled' | 'all'>('scheduled');
@@ -35,6 +64,22 @@ export function ReportGenerationDialog({ divisions }: ReportGenerationDialogProp
   const [includeJsComment, setIncludeJsComment] = useState(false);
 
   const layout = includeStatus || includeJsComment ? 'detailed' : 'compact';
+
+  // A division outside every organization (a legacy root) is only reachable
+  // through "All organizations", so its presence also earns that choice.
+  const placedCount = organizations.reduce((n, o) => n + o.divisionIds.length, 0);
+  const offerAll = organizations.length > 1 || placedCount < divisions.length;
+  const selectedOrganization = organizations.find((o) => o.id === organizationId) ?? null;
+  const visibleDivisions = selectedOrganization
+    ? divisions.filter((d) => selectedOrganization.divisionIds.includes(d.id))
+    : divisions;
+
+  const chooseOrganization = (id: string) => {
+    setOrganizationId(id);
+    // Picks from the previous organization would narrow the report to
+    // divisions no longer on screen.
+    setDivisionIds(new Set());
+  };
 
   const toggleDivision = (id: string) => {
     setDivisionIds((prev) => {
@@ -56,6 +101,7 @@ export function ReportGenerationDialog({ divisions }: ReportGenerationDialogProp
 
   const onGenerate = () => {
     const params = new URLSearchParams();
+    if (selectedOrganization) params.set('org', selectedOrganization.id);
     if (divisionIds.size > 0) params.set('division', [...divisionIds].join(','));
     if (priorities.size > 0) params.set('priority', [...priorities].join(','));
     if (scope !== 'scheduled') params.set('scope', scope);
@@ -86,8 +132,29 @@ export function ReportGenerationDialog({ divisions }: ReportGenerationDialogProp
         size="sm"
       >
         <div className="flex flex-col gap-4">
+          {organizations.length > 0 ? (
+            <Field label="Organization">
+              <select
+                value={selectedOrganization ? selectedOrganization.id : ALL_ORGANIZATIONS}
+                onChange={(e) => chooseOrganization(e.target.value)}
+                disabled={!offerAll}
+                aria-label="Organization"
+                className={ORGANIZATION_SELECT}
+              >
+                {offerAll ? (
+                  <option value={ALL_ORGANIZATIONS}>{ALL_ORGANIZATIONS_LABEL}</option>
+                ) : null}
+                {organizations.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ) : null}
+
           <Field label="Division">
-            {divisions.length === 0 ? (
+            {visibleDivisions.length === 0 ? (
               <p className="text-[11px] text-ink-3">No divisions available.</p>
             ) : (
               <div className="flex flex-col gap-2">
@@ -101,7 +168,7 @@ export function ReportGenerationDialog({ divisions }: ReportGenerationDialogProp
                   All divisions
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 max-h-[180px] overflow-y-auto pr-1">
-                  {divisions.map((d) => (
+                  {visibleDivisions.map((d) => (
                     <label
                       key={d.id}
                       className="flex items-center gap-2 text-[12.5px] text-ink cursor-pointer py-0.5"

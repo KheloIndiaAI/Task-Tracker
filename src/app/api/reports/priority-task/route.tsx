@@ -6,6 +6,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { formatDateTimeIST, isoDay } from '@/lib/date';
 import { getHeadedDivisionIds } from '@/lib/rbac';
+import { resolveOrganizationScope } from '@/lib/organization-scope';
 import { rateLimit } from '@/lib/rate-limit';
 import { logError } from '@/lib/utils/log';
 import { fetchReportDivisionGroups } from '@/lib/reports';
@@ -22,8 +23,12 @@ export const runtime = 'nodejs';
  *
  * Query params (all optional, all validated leniently — this is a filter
  * dialog's own generated link, not third-party input):
+ *   org        — an organization id: only its divisions and PMU teams, and its
+ *                name printed under the title. Omitted (or 'all') for every
+ *                organization. An id that is not an organization matches
+ *                nothing. Only ever narrows — see organization-scope-shared.ts.
  *   division   — comma-separated division/PMU ids, or omitted for every
- *                division the caller can see
+ *                division the caller can see (inside `org`, when given)
  *   priority   — comma-separated today|week|fortnight|month, or omitted for
  *                all four
  *   scope      — 'scheduled' (default; only tasks carrying a JS Priority
@@ -41,6 +46,7 @@ export const runtime = 'nodejs';
  */
 
 const querySchema = z.object({
+  org: z.string().optional(),
   division: z.string().optional(),
   priority: z.string().optional(),
   scope: z.enum(['scheduled', 'all']).optional(),
@@ -95,7 +101,10 @@ export async function GET(request: Request) {
   const includeStatus = parsed.data.status === '1';
   const includeJsComment = parsed.data.jsComment === '1';
 
+  const organization = await resolveOrganizationScope(parsed.data.org);
+
   const groups = await fetchReportDivisionGroups(me, {
+    scopeDivisionIds: organization?.divisionIds,
     divisionIds,
     priorities,
     scope,
@@ -117,6 +126,7 @@ export async function GET(request: Request) {
         includeUnscheduled={includeUnscheduled}
         includeStatus={includeStatus}
         includeJsComment={includeJsComment}
+        organizationName={organization?.organizationName ?? null}
         generatedAtLabel={formatDateTimeIST(now)}
       />,
     );

@@ -13,7 +13,19 @@ import {
   canSetJsPriorityLane,
   getHeadedDivisionIds,
 } from '@/lib/rbac';
+import { readNamedStructureTree } from '@/lib/organization-scope';
+import {
+  ALL_ORGANIZATIONS,
+  defaultReportOrganization,
+  resolveBoardOrganization,
+} from '@/lib/organization-scope-shared';
 import { getPmuTeamMemberIds } from '@/lib/pmu-team';
+import {
+  groupByPlacement,
+  organizationsWithTaskBoards,
+  taskBoardIdsInOrganization,
+  type NamedStructureNode,
+} from '@/lib/structure-shared';
 import { getContributorTaskIds } from '@/lib/task-participants';
 import { resolveGroupByDivision } from '@/lib/task-grouping-shared';
 import { canAccessReportGeneration } from '@/lib/reports-shared';
@@ -30,6 +42,7 @@ import { TaskScopeControls } from './_components/TaskScopeControls';
 import { type LaneBoardTask } from './_components/DivisionLaneBoard';
 import { DivisionNoticeBoard } from './_components/DivisionNoticeBoard';
 import { DivisionSubFilter } from './_components/DivisionSubFilter';
+import { OrganizationPills } from './_components/OrganizationPills';
 import { ReportGenerationDialog } from './_components/ReportGenerationDialog';
 import { StatsStrip } from './_components/StatsStrip';
 import { TaskListItem } from './_components/TaskListItem';
@@ -43,7 +56,7 @@ const VALID_FILTERS: TaskFilter[] = ['all', 'today', 'overdue', 'mine', 'urgent'
 const VALID_SORTS: TaskSort[] = ['default', 'latest', 'alpha'];
 
 type PageProps = {
-  searchParams?: { filter?: string; division?: string; group?: string; sort?: string };
+  searchParams?: { filter?: string; division?: string; group?: string; sort?: string; org?: string };
 };
 
 export default async function TasksPage({ searchParams }: PageProps) {
@@ -106,6 +119,37 @@ export default async function TasksPage({ searchParams }: PageProps) {
   // task-grouping-shared.ts; `?group=none` is the explicit opt-out.
   const groupByDivision = resolveGroupByDivision(groupParam, true);
 
+  // Super Admin, OSD, and any division head always have this; canGenerateReports
+  // only ever widens it further — see canAccessReportGeneration's doc comment.
+  const canAccessReports = canAccessReportGeneration(me, headedDivisionIds);
+
+  // The organization tree, read only for someone who needs it: a Super Admin
+  // (the organization pills) or anyone who can open the report dialog (its
+  // Organization dropdown). Tens of rows; everyone else skips the query.
+  const tree: NamedStructureNode[] =
+    me.isSuperAdmin || canAccessReports ? await readNamedStructureTree() : [];
+
+  // The Super Admin's organization pills — Ministry Headquarter by default,
+  // "All organizations" for the board as it was. See
+  // organization-scope-shared.ts. It only narrows: every read below is
+  // visibility-scoped already, and a Super Admin reads everything anyway.
+  // Everyone else has no pills, and `?org=` is ignored for them.
+  const organizationOptions = me.isSuperAdmin ? organizationsWithTaskBoards(tree) : [];
+  const selectedOrganizationId = me.isSuperAdmin
+    ? resolveBoardOrganization(
+        { org: searchParams?.org, division: divisionFilter },
+        organizationOptions,
+        tree,
+      )
+    : null;
+  const scopeDivisionIds = selectedOrganizationId
+    ? taskBoardIdsInOrganization(selectedOrganizationId, tree)
+    : undefined;
+  // What the KPI drill-downs and their division links carry, so they describe
+  // the same board. `undefined` for everyone without the pills.
+  const organizationParam =
+    organizationOptions.length > 0 ? selectedOrganizationId ?? ALL_ORGANIZATIONS : undefined;
+
   const [
     taskResult,
     counts,
@@ -115,8 +159,14 @@ export default async function TasksPage({ searchParams }: PageProps) {
     completedResult,
     reportDivisions,
   ] = await Promise.all([
-    fetchVisibleTasks({ callerId: me.id, filter, divisionId: divisionFilter || undefined, sort }),
-    fetchTaskCounts(me.id),
+    fetchVisibleTasks({
+      callerId: me.id,
+      filter,
+      divisionId: divisionFilter || undefined,
+      sort,
+      scopeDivisionIds,
+    }),
+    fetchTaskCounts(me.id, { scopeDivisionIds }),
     prisma.division.findMany({
       // Divisions, their PMUs (so PMU-owned tasks are filterable too), and
       // sub-divisions (for the per-card sub-division/PMU filter pills below
@@ -152,6 +202,7 @@ export default async function TasksPage({ searchParams }: PageProps) {
           divisionId: divisionFilter || undefined,
           sort,
           ownerId: filter === 'mine' ? me.id : undefined,
+          scopeDivisionIds,
         })
       : Promise.resolve(null),
     // The report dialog's Division list — flat, and scoped to the signed-in
@@ -159,10 +210,26 @@ export default async function TasksPage({ searchParams }: PageProps) {
     // (every one, for Super Admin / OSD). Matches what the report itself can
     // contain, so no entry can produce a report of work the caller cannot see.
     // Only fetched for someone who can open the dialog.
-    canAccessReportGeneration(me, headedDivisionIds)
+    canAccessReports
       ? fetchTaskDivisionOptions(me.id, { activeOnly: true, includePmus: true })
       : Promise.resolve<{ id: string; name: string }[]>([]),
   ]);
+
+  // The report dialog's Organization dropdown: the organizations holding at
+  // least one of those divisions, in tree order, each with its own divisions
+  // in the list's own order. Opens on Ministry Headquarter when it is offered.
+  const reportOrganizations = groupByPlacement(reportDivisions, tree).flatMap((placed) =>
+    placed.organization
+      ? [
+          {
+            id: placed.organization.id,
+            name: placed.organization.name,
+            divisionIds: placed.groups.flatMap((g) => g.units.map((u) => u.id)),
+          },
+        ]
+      : [],
+  );
+  const defaultReportOrganizationId = defaultReportOrganization(reportOrganizations);
 
   // Mobile task-card action permissions. `canSetFortnight` (Add to Priority Board
   // Fortnight lane) is OSD / Super Admin only; `canChangeStatus` is decided per card
@@ -174,9 +241,6 @@ export default async function TasksPage({ searchParams }: PageProps) {
   // Admin, or a user carrying the can_add_js_comment grant — see
   // updateTaskJsCommentAction. Unrelated to task contribution rights below.
   const canEditJsComment = me.isSuperAdmin || me.canAddJsComment;
-  // Super Admin, OSD, and any division head always have this; canGenerateReports
-  // only ever widens it further — see canAccessReportGeneration's doc comment.
-  const canAccessReports = canAccessReportGeneration(me, headedDivisionIds);
   // Notice board edit rights are per-division (a head power) — same actor
   // shape canEditDivisionNotice expects, reused per group below.
   const noticeBoardActor = {
@@ -264,7 +328,14 @@ export default async function TasksPage({ searchParams }: PageProps) {
   // restores the URL, so these params are identical on return.
   const listStateKey = `filter=${filter}&division=${divisionFilter}&sort=${sort}&group=${
     groupByDivision ? 'division' : ''
-  }`;
+  }&org=${organizationParam ?? ''}`;
+
+  // What an organization pill keeps when it switches the board — see
+  // OrganizationPills. Only params the reader actually set are carried.
+  const organizationPillCarry: Record<string, string> = {};
+  if (searchParams?.filter) organizationPillCarry.filter = searchParams.filter;
+  if (searchParams?.sort) organizationPillCarry.sort = searchParams.sort;
+  if (searchParams?.group) organizationPillCarry.group = searchParams.group;
 
   return (
       <PullToRefresh>
@@ -281,7 +352,13 @@ export default async function TasksPage({ searchParams }: PageProps) {
               </h1>
             </div>
             <div className="flex items-center gap-2">
-              {canAccessReports ? <ReportGenerationDialog divisions={reportDivisions} /> : null}
+              {canAccessReports ? (
+                <ReportGenerationDialog
+                  divisions={reportDivisions}
+                  organizations={reportOrganizations}
+                  defaultOrganizationId={defaultReportOrganizationId}
+                />
+              ) : null}
               <div className="hidden md:block">
                 <QuickCreatePrimary />
               </div>
@@ -292,10 +369,21 @@ export default async function TasksPage({ searchParams }: PageProps) {
               close to a 390px phone's width. */}
           <div className="flex flex-wrap items-center justify-between gap-2 mt-2">
             <Suspense fallback={null}>
-              <TaskScopeControls />
+              <TaskScopeControls organizationParam={organizationParam} />
             </Suspense>
-            <StatsStrip counts={counts} />
+            <StatsStrip counts={counts} organizationParam={organizationParam} />
           </div>
+
+          {/* Super Admin only: which organization's boards the page shows. */}
+          {organizationOptions.length > 0 ? (
+            <div className="mt-1.5">
+              <OrganizationPills
+                organizations={organizationOptions}
+                selectedId={selectedOrganizationId}
+                carry={organizationPillCarry}
+              />
+            </div>
+          ) : null}
         </div>
 
         {/* Task list — Quick Search overlays matching cards in this panel while

@@ -53,6 +53,12 @@ export type PriorityTaskReportProps = {
   includeUnscheduled: boolean;
   includeStatus: boolean;
   includeJsComment: boolean;
+  /**
+   * The organization the report covers, printed under the title so a PDF
+   * read on its own says whose work it is. `null` — every organization — keeps
+   * the header exactly as it was.
+   */
+  organizationName?: string | null;
   /** Pre-formatted IST date/time, e.g. "13 Sep 2026, 4:05 pm" — formatting policy lives with the caller. */
   generatedAtLabel: string;
 };
@@ -70,6 +76,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.page,
   },
   title: { fontSize: 19, fontWeight: 700, color: C.ink },
+  organizationLine: { fontSize: 10, color: C.ink2, marginTop: 5 },
   sectionTitle: { fontSize: 14, fontWeight: 700, color: C.ink, marginBottom: 10 },
   metaLine: { fontSize: 8, color: C.ink3, marginTop: 5 },
   headerRule: {
@@ -161,6 +168,7 @@ export function PriorityTaskReportDocument({
   includeUnscheduled,
   includeStatus,
   includeJsComment,
+  organizationName = null,
   generatedAtLabel,
 }: PriorityTaskReportProps) {
   const totalTasks = groups.reduce((n, g) => n + g.tasks.length, 0);
@@ -174,6 +182,7 @@ export function PriorityTaskReportDocument({
     <Document title="Priority Task Report">
       <Page size="A4" style={styles.page} wrap>
         <Text style={styles.title}>Priority Task Report</Text>
+        {organizationName ? <Text style={styles.organizationLine}>{organizationName}</Text> : null}
         <Text style={styles.metaLine}>Generated {generatedAtLabel}</Text>
         <View style={styles.headerRule} />
 

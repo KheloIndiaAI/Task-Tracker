@@ -106,7 +106,14 @@ export function organizationOf(
   nodeId: string,
   nodes: readonly StructureTreeNode[],
 ): string | null {
-  const byId = new Map(nodes.map((n) => [n.id, n]));
+  return organizationIn(new Map(nodes.map((n) => [n.id, n])), nodeId);
+}
+
+/** organizationOf over a prebuilt id map — so a batch builds the map once. */
+function organizationIn(
+  byId: ReadonlyMap<string, StructureTreeNode>,
+  nodeId: string,
+): string | null {
   const seen = new Set<string>();
   let cur = byId.get(nodeId);
   while (cur && !seen.has(cur.id)) {
@@ -116,6 +123,48 @@ export function organizationOf(
     cur = up ? byId.get(up) : undefined;
   }
   return null;
+}
+
+/**
+ * The name of the organization holding the ministry's own structure — the row
+ * migration 20260921120200_create_ministry_headquarter created. Its id is a
+ * random uuid that differs per database, so the name is how that migration and
+ * every seed find it. The Super Admin's tasks board and the report dialog open
+ * on it by default.
+ */
+export const MINISTRY_HEADQUARTER_NAME = 'Ministry Headquarter';
+
+/**
+ * Ministry Headquarter among `organizations` (pass organizations only),
+ * matched on its name with case and surrounding spaces ignored. `null` when
+ * none carries it — renamed, or a database that predates it — so a caller
+ * falls back instead of guessing. The first match wins if two ever share it.
+ */
+export function findMinistryHeadquarter<T extends { name: string }>(
+  organizations: readonly T[],
+): T | null {
+  const wanted = MINISTRY_HEADQUARTER_NAME.toLowerCase();
+  return organizations.find((o) => o.name.trim().toLowerCase() === wanted) ?? null;
+}
+
+/**
+ * The task boards — divisions and PMU teams — inside one organization,
+ * directly or through its directorates. A PMU counts wherever its division
+ * sits (pmu_parent_division_id, falling back to parent_id), the same placement
+ * every picker uses, so the two can never disagree.
+ *
+ * Empty for an id that is not an organization: a stale or hand-typed id
+ * narrows a read to nothing, never widens it to everything. Cycle-safe.
+ */
+export function taskBoardIdsInOrganization(
+  organizationId: string,
+  nodes: readonly StructureTreeNode[],
+): string[] {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  if (byId.get(organizationId)?.kind !== 'organization') return [];
+  return nodes
+    .filter((n) => isTaskBoardKind(n.kind) && organizationIn(byId, n.id) === organizationId)
+    .map((n) => n.id);
 }
 
 /**
@@ -301,6 +350,19 @@ export function groupByPlacement<T extends { id: string }>(
     result.push(entry);
   }
   return result;
+}
+
+/**
+ * The organizations holding at least one task board (a division or PMU team),
+ * in the order the tree is given — callers pass it by kind, display order and
+ * name, Structure & hierarchy's own order. One with nothing to show yet is left
+ * out. What the Super Admin's organization pills offer.
+ */
+export function organizationsWithTaskBoards(
+  nodes: readonly NamedStructureNode[],
+): { id: string; name: string }[] {
+  const boards = nodes.filter((n) => isTaskBoardKind(n.kind));
+  return groupByPlacement(boards, nodes).flatMap((o) => (o.organization ? [o.organization] : []));
 }
 
 /** Divisions that share one place in the tree. */

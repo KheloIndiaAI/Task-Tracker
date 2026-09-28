@@ -10,6 +10,13 @@ import { cn } from '@/lib/utils';
 
 type StatsStripProps = {
   counts: { open: number; dueToday: number; overdue: number; completed: number };
+  /**
+   * The `?org=` the Super Admin's board is showing — an organization id, or
+   * 'all'. Carried on every drill-down fetch so a tile's list matches its
+   * number, and on each division link so arriving there keeps the same
+   * organization pill lit. Omitted for everyone else: nothing changes.
+   */
+  organizationParam?: string;
 };
 
 type Kind = 'today' | 'overdue' | 'divisions' | 'completed';
@@ -32,7 +39,7 @@ const SHEET_META: Record<Kind, { title: string; subtitle: string; empty: string 
  * Completed list the tasks (each opens its detail), Open tasks shows the
  * per-division / sub-division counts.
  */
-export function StatsStrip({ counts }: StatsStripProps) {
+export function StatsStrip({ counts, organizationParam }: StatsStripProps) {
   const [panelOpen, setPanelOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -65,7 +72,9 @@ export function StatsStrip({ counts }: StatsStripProps) {
     setLoading(true);
     if (next === 'divisions') setDivisions(null);
     else setTasks(null);
-    fetch(`/api/tasks/stats?kind=${next}`, { cache: 'no-store' })
+    const query = new URLSearchParams({ kind: next });
+    if (organizationParam) query.set('org', organizationParam);
+    fetch(`/api/tasks/stats?${query.toString()}`, { cache: 'no-store' })
       .then(async (r) => {
         if (!r.ok) throw new Error('Could not load.');
         return r.json();
@@ -137,6 +146,7 @@ export function StatsStrip({ counts }: StatsStripProps) {
             loading={loading}
             error={error}
             empty={SHEET_META.divisions.empty}
+            organizationParam={organizationParam}
             onNavigate={close}
           />
         ) : kind ? (
@@ -287,14 +297,22 @@ function DivisionsView({
   loading,
   error,
   empty,
+  organizationParam,
   onNavigate,
 }: {
   divisions: DivisionOpenBreakdown[] | null;
   loading: boolean;
   error: string | null;
   empty: string;
+  organizationParam?: string;
   onNavigate: () => void;
 }) {
+  const hrefFor = (divisionId: string) => {
+    const query = new URLSearchParams();
+    if (organizationParam) query.set('org', organizationParam);
+    query.set('division', divisionId);
+    return `/tasks?${query.toString()}`;
+  };
   if (error) return <ViewError message={error} />;
   if (loading && !divisions) return <ViewSkeleton />;
   if (!divisions || divisions.length === 0) {
@@ -306,7 +324,7 @@ function DivisionsView({
         <li key={d.divisionId}>
           <div className="rounded-xl border border-line bg-panel px-3 py-2.5">
             <Link
-              href={`/tasks?division=${d.divisionId}`}
+              href={hrefFor(d.divisionId)}
               onClick={onNavigate}
               className="group flex items-center gap-2.5"
             >

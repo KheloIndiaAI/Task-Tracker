@@ -258,6 +258,19 @@ export type VisibleTask = Task & {
  */
 const TASK_PAGE_LIMIT = 500;
 
+/**
+ * An optional narrowing to a set of divisions / PMU teams — one organization's
+ * boards, from the Super Admin's organization pills (see
+ * organization-scope-shared.ts). `undefined` narrows nothing; an empty list
+ * narrows to nothing. Always ANDed on top of the visibility scope, so it can
+ * only ever take tasks away.
+ */
+export type TaskReadScope = { scopeDivisionIds?: string[] };
+
+function scopeClauses(scope: TaskReadScope): Prisma.TaskWhereInput[] {
+  return scope.scopeDivisionIds ? [{ divisionId: { in: scope.scopeDivisionIds } }] : [];
+}
+
 export async function fetchVisibleTasks(opts: {
   callerId: string;
   filter: TaskFilter;
@@ -270,7 +283,7 @@ export async function fetchVisibleTasks(opts: {
    * finished ones.
    */
   ownerId?: string;
-}): Promise<{ tasks: VisibleTask[]; total: number; capped: boolean }> {
+} & TaskReadScope): Promise<{ tasks: VisibleTask[]; total: number; capped: boolean }> {
   const me = await prisma.user.findUnique({
     where: { id: opts.callerId },
     select: {
@@ -290,6 +303,7 @@ export async function fetchVisibleTasks(opts: {
   const andClauses: Prisma.TaskWhereInput[] = [
     ...visibilityAnd(visibilityClauses),
     filterClause,
+    ...scopeClauses(opts),
   ];
   if (opts.divisionId) {
     andClauses.push({ divisionId: opts.divisionId });
@@ -349,9 +363,10 @@ export async function fetchVisibleTasks(opts: {
 
 /**
  * Counters for the stats strip. Same scoping, different where clauses,
- * collapsed into a single query batch.
+ * collapsed into a single query batch. `scope` narrows them to the
+ * organization the board is showing, so the KPIs describe the same board.
  */
-export async function fetchTaskCounts(callerId: string): Promise<{
+export async function fetchTaskCounts(callerId: string, scope: TaskReadScope = {}): Promise<{
   open: number;
   dueToday: number;
   overdue: number;
@@ -374,7 +389,7 @@ export async function fetchTaskCounts(callerId: string): Promise<{
   const base: Prisma.TaskWhereInput = {
     archivedAt: null,
     parentTaskId: null,
-    AND: visibilityAnd(visibilityClauses),
+    AND: [...visibilityAnd(visibilityClauses), ...scopeClauses(scope)],
   };
 
   const [open, dueToday, overdue, completed] = await Promise.all([
@@ -414,11 +429,13 @@ export type StatTaskRow = {
 
 /**
  * Visibility-scoped list of tasks behind a stat tile: open tasks due today,
- * open tasks overdue, or the most recently completed tasks.
+ * open tasks overdue, or the most recently completed tasks. `scope` as in
+ * fetchTaskCounts, so a tile's list matches its number.
  */
 export async function fetchStatTasks(
   callerId: string,
   kind: 'today' | 'overdue' | 'completed',
+  scope: TaskReadScope = {},
 ): Promise<StatTaskRow[]> {
   const me = await prisma.user.findUnique({ where: { id: callerId }, select: STAT_CALLER_SELECT });
   if (!me) return [];
@@ -437,7 +454,7 @@ export async function fetchStatTasks(
     where: {
       archivedAt: null,
       parentTaskId: null,
-      AND: [...visibilityAnd(visibilityClauses), statusAndDue],
+      AND: [...visibilityAnd(visibilityClauses), statusAndDue, ...scopeClauses(scope)],
     },
     select: {
       id: true,
@@ -477,10 +494,12 @@ export type DivisionOpenBreakdown = {
 /**
  * Visibility-scoped breakdown of open tasks by division and sub-division —
  * the drill-down behind the Open tasks stat tile. Sorted by count, so the
- * divisions carrying the most work surface first.
+ * divisions carrying the most work surface first. `scope` as in
+ * fetchTaskCounts.
  */
 export async function fetchOpenTasksByDivision(
   callerId: string,
+  scope: TaskReadScope = {},
 ): Promise<DivisionOpenBreakdown[]> {
   const me = await prisma.user.findUnique({ where: { id: callerId }, select: STAT_CALLER_SELECT });
   if (!me) return [];
@@ -491,7 +510,7 @@ export async function fetchOpenTasksByDivision(
       archivedAt: null,
       parentTaskId: null,
       status: { not: 'completed' },
-      AND: visibilityAnd(visibilityClauses),
+      AND: [...visibilityAnd(visibilityClauses), ...scopeClauses(scope)],
     },
     select: {
       divisionId: true,
